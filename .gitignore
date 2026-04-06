@@ -69,3 +69,4 @@ examples/
 !config/**/*.py
 !constants/
 !constants/**/*.py
+/.agents/
