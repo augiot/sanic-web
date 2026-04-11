@@ -23,38 +23,13 @@
   <a href="./README.md">简体中文</a> | <a href="./README_en.md">English</a>
 </p>
 
-<p align="center">
-  <b>寻找企业级 AI 解决方案？</b>
-</p>
-
-<p align="center">
-  <a href="http://www.aixhub.top/"><img src="https://img.shields.io/badge/🤖_AiX--Bot-8A2BE2?style=for-the-badge&logoColor=white" alt="AiX-Bot" /></a>
-</p>
-
-<p align="center">
-  我们的商业产品，提供更强大的企业级功能：<br/>
-  私有化部署 · 定制化开发 · 专属技术支持 · 多场景 AI 矩阵应用
-</p>
-
-<p align="center">
-  <b>👇 点击下方场景立即体验 👇</b>
-</p>
-
-<p align="center">
-  <a href="YOUR_CHAT_URL"><img src="https://img.shields.io/badge/💬_智能对话-4A90D9?style=for-the-badge" alt="智能对话" /></a>
-  <a href="YOUR_DATA_URL"><img src="https://img.shields.io/badge/📊_数据问答-10B981?style=for-the-badge" alt="数据问答" /></a>
-  <a href="http://www.aixhub.top:5006"><img src="https://img.shields.io/badge/📈_智能写作-F59E0B?style=for-the-badge" alt="智能写作" /></a>
-</p>
-
-<p align="center">
-  <sub>💼 商务合作请联系微信（备注「商务合作」）| <a href="http://www.aixhub.top/">联系我们</a></sub>
-</p>
+## 项目介绍
 
 Aix-DB 基于 **LangChain/LangGraph** 框架，结合 **MCP Skills** 多智能体协作架构，实现自然语言到数据洞察的端到端转换。
 
-**核心能力**：通用问答 · 数据问答（Text2SQL） · 表格问答 · 深度搜索 · 数据可视化 · MCP 多智能体
+**核心能力**：智能问答 · 数据问答（Text2SQL） · 表格问答 · 深度问数 · 数据可视化 · MCP 多智能体 · Skill 模式
 
-**产品特点**：📦 开箱即用 · 🔒 安全可控 · 🔌 易于集成 · 🎯 越问越准
+**产品特点**：📦 开箱即用 · 🔒 安全可控 · 🔌 易于集成 · 🎯 越问越准 · 🧩 Skill 模式 · 🐾 OpenClaw 智能集成
 
 
 ## 演示视频
@@ -72,8 +47,132 @@ Aix-DB 基于 **LangChain/LangGraph** 框架，结合 **MCP Skills** 多智能�
       <video src="https://github.com/user-attachments/assets/462f4e2e-86e0-4d2a-8b78-5d6ca390c03c" controls="controls" muted="muted" style="max-height:320px; min-height: 150px;"></video>
     </td>
   </tr>
+  <tr>
+    <th>🧩 Skill 技能中心</th>
+    <th>🐾 OpenClaw 模式</th>
+  </tr>
+  <tr>
+    <td>
+      <video src="https://github.com/user-attachments/assets/c3f76eba-a710-4936-b0f9-c658a035826d" controls="controls" muted="muted" style="max-height:320px; min-height: 150px;"></video>
+    </td>
+    <td>
+      <video src="https://github.com/user-attachments/assets/98417cb2-e829-4733-999f-7f1494424707" controls="controls" muted="muted" style="max-height:320px; min-height: 150px;"></video>
+    </td>
+  </tr>
 </table>
 
+## 联系我们
+
+无论是项目部署、技术咨询还是商务合作，欢迎随时扫码添加微信沟通：
+
+<table align="center">
+  <tr>
+    <td align="center"><b>微信公众号</b></td>
+    <td align="center"><b>个人微信</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="./docs/docs/images/qrcode.jpg" alt="微信公众号" width="180"/></td>
+    <td align="center"><img src="./docs/docs/images/wechat.jpg" alt="个人微信" width="180"/></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>关注公众号获取最新动态</sub></td>
+    <td align="center"><sub>添加时请备注：<b>技术支持&商务合作</b></sub></td>
+  </tr>
+</table>
+
+<div align="center">
+
+### 技术支持与赞助
+
+</div>
+
+<table align="center">
+  <tr>
+    <th>🎯 技术社群（365元）</th>
+    <th>🚀 定制开发（1000元起）</th>
+  </tr>
+  <tr>
+    <td>
+      <ul>
+        <li>我将亲自远程帮您  环境配置与项目部署（Openclaw&Aix-DB）</b></li>
+        <li>提供项目 <b>全部资料</b>（源码、文档、配置模板）</li>
+        <li><b>专属技术支持群</b>，每日AI咨询 & 飞书文档 & 社群互助</li>
+        <li>帮你开通 <b>Claude / Codex / Gemini</b> 账号</li>
+        <li>项目实战：VibeCoding实操 & 数据问答 Skill开发</li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>按需求定制功能开发</li>
+        <li>Openclaw 定制化部署</li>
+        <li>企业级场景适配与对接</li>
+        <li>一对一技术咨询</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<div align="center">
+
+#### 社群权益
+
+</div>
+
+<table align="center">
+  <tr>
+    <td>📅 <b>定期组织腾讯会议</b></td>
+    <td>开展群内答疑，集中解决部署、分享最新技术落地案例实操</td>
+  </tr>
+  <tr>
+    <td>🖥️ <b>典型问题远程演示</b></td>
+    <td>针对高频难点，屏幕共享实操讲解，看得懂、学得会</td>
+  </tr>
+  <tr>
+    <td>💡 <b>二次开发思路分享</b></td>
+    <td>Vibe Coding方式根据自己需求定制开发实战案例分享</td>
+  </tr>
+  <tr>
+    <td>🔔 <b>项目更新同步</b></td>
+    <td>第一时间发布版本迭代、Bug 修复与新功能进展</td>
+  </tr>
+</table>
+
+<div align="center" style="margin-top: 8px;">
+  <sub>集中答疑 + 资料共享 + 社群互助，让每一位成员都能参与、收获、成长</sub>
+</div>
+
+<div align="center" style="margin-top: 12px;">
+  <sub>添加微信 <b>weber812</b>（备注：技术支持）即可加入</sub>
+</div>
+
+<div align="center">
+
+#### 商务合作
+
+</div>
+
+<table align="center">
+  <tr>
+    <td>🗂️ <b>数据问答领域</b></td>
+    <td>面向企业数据分析场景，提供 Text2SQL、智能报表、数据可视化等端到端解决方案</td>
+  </tr>
+  <tr>
+    <td>🤖 <b>OpenClaw 多智能体搭建</b></td>
+    <td>基于 OpenClaw 平台，为企业定制多智能体协作系统，实现复杂业务流程的智能化</td>
+  </tr>
+  <tr>
+    <td>🎯 <b>特定领域 SKILL 开发</b></td>
+    <td>根据行业特点与业务需求，定制开发专属 SKILL 指令集，提升 Agent 在垂直领域的专业能力</td>
+  </tr>
+  <tr>
+    <td>💬 <b>方案咨询与交流</b></td>
+    <td>无论您有任何技术疑问或业务想法，欢迎随时联系我，一起探讨最适合您的落地方案</td>
+  </tr>
+</table>
+
+<div align="center" style="margin-top: 8px;">
+  <sub>如有合作意向，请添加微信 <b>weber812</b>（备注：商务合作）详细沟通</sub>
+</div>
 
 ## 系统架构
 
@@ -140,6 +239,8 @@ docker run -d \
   -e LANGFUSE_SECRET_KEY= \
   -e LANGFUSE_PUBLIC_KEY= \
   -e LANGFUSE_BASE_URL= \
+  -e VITE_ENABLE_PAGE_AGENT=false \
+  -e LLM_MAX_TOKENS=65536 \
   -p 18080:80 \
   -p 18088:8088 \
   -p 15432:5432 \
@@ -153,7 +254,7 @@ docker run -d \
   -v ./volume/logs/minio:/var/log/minio \
   -v ./volume/logs/postgresql:/var/log/postgresql \
   --add-host host.docker.internal:host-gateway \
-  crpi-7xkxsdc0iki61l0q.cn-hangzhou.personal.cr.aliyuncs.com/apconw/aix-db:1.2.3
+  crpi-7xkxsdc0iki61l0q.cn-hangzhou.personal.cr.aliyuncs.com/apconw/aix-db:1.2.4
 ```
 
 ### 使用 Docker Compose
@@ -161,7 +262,7 @@ docker run -d \
 ```bash
 git clone https://github.com/apconw/Aix-DB.git
 cd Aix-DB/docker
-cp .env.template .env  # 复制环境变量模板，按需修改
+cp .env.template .env  # 复制环境变量模板，按需修改（推荐开启 VITE_ENABLE_PAGE_AGENT=true）
 docker-compose up -d
 ```
 
@@ -231,12 +332,6 @@ npm run dev
 
 
 
-## 文档
-- [配置说明](./docs/docs/index.md)
-- [API 文档](http://localhost:8088/docs) (启动后访问)
-
-
-
 ## 贡献指南
 
 欢迎提交 Issue 和 Pull Request！
@@ -246,71 +341,6 @@ npm run dev
 3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 提交 Pull Request
-
-
-## 联系我们
-
-如有任何疑问，进微信群欢迎通过以下方式联系：
-
-<table align="center">
-  <tr>
-    <td align="center"><b>微信公众号</b></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="./docs/docs/images/qrcode.jpg" alt="微信公众号" width="180"/></td>
-  </tr>
-</table>
-
-
-## 项目私有化部署服务
-
-<table>
-<tr>
-<td width="100%">
-
-<div align="center" style="max-width: 560px; margin: 0 auto; border: 1px solid #d0d7de; border-radius: 12px; padding: 24px; background: #f8f7f5; color: #1f2328; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', sans-serif; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
-
-<span style="font-size: 1.05em; color: #1f2328; font-weight: 600;">🚀 仅承接完整交付，不接零散咨询</span>
-
-<div style="margin-top: 6px; font-size: 0.9em; color: #424a53;">开源维护不易，为保障交付质量，服务聚焦于「部署 + 定制 + 资料」一站式落地</div>
-
-
-<table width="100%" style="margin: 12px 0; border-collapse: collapse; color: #1f2328;">
-<tr>
-<td width="33%" align="center" style="padding: 12px; border-right: 1px solid #d0d7de;">
-<strong style="color: #1f2328;">📦 部署</strong><br/>
-<span style="font-size: 0.85em; color: #424a53;">指定环境部署并跑通，无需自行排查</span>
-</td>
-<td width="33%" align="center" style="padding: 12px; border-right: 1px solid #d0d7de;">
-<strong style="color: #1f2328;">🔧 定制</strong><br/>
-<span style="font-size: 0.85em; color: #424a53;">简单功能定制与集成</span>
-</td>
-<td width="34%" align="center" style="padding: 12px;">
-<strong style="color: #1f2328;">📄 资料</strong><br/>
-<span style="font-size: 0.85em; color: #424a53;">部署文档、配置说明、二开/运维指导</span>
-</td>
-</tr>
-</table>
-
-<div style="text-align: center; margin: 16px 0;">
-<strong style="font-size: 1.1em; color: #1f2328;">服务报价</strong><br/>
-<span style="font-size: 1.4em; color: #0969da; font-weight: 700;">¥5,000</span> <span style="font-size: 0.9em; color: #424a53;">（一口价）</span>
-</div>
-
-<div style="text-align: center; font-size: 0.9em; color: #424a53;">含：远程部署、简单定制开发、完整资料包、二开指导、<strong style="color: #1f2328;">一年运维支持</strong></div>
-
-
-<div align="center" style="margin-top: 16px; color: #1f2328;">
-<strong>联系作者</strong>：微信 <code style="background: #ebecf0; color: #1f2328; padding: 4px 10px; border-radius: 6px; font-size: 1em; border: 1px solid #d0d7de;">weber812</code><br/>
-<span style="font-size: 0.9em; color: #424a53;">添加时请备注：<b>项目部署</b></span>
-</div>
-
-</div>
-
-</td>
-</tr>
-</table>
-
 
 ## Star History
 

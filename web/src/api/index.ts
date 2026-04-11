@@ -5,7 +5,7 @@
 /**
  * Event Stream 调用大模型接口 Ollama3 (Fetch 调用)
  */
-export async function createOllama3Stylized(text, qa_type, uuid, chat_id, file_list, datasource_id) {
+export async function createOllama3Stylized(text, qa_type, uuid, chat_id, file_list, datasource_id, selected_skills?) {
   const userStore = useUserStore()
   const token = userStore.getUserToken()
   const url = new URL(`${location.origin}/sanic/dify/get_answer`)
@@ -18,7 +18,7 @@ export async function createOllama3Stylized(text, qa_type, uuid, chat_id, file_l
   const controller = new AbortController()
   const timeoutId = setTimeout(() => {
     controller.abort()
-  }, 18 * 60 * 1000) // 18分钟超时 (18 * 60 * 1000 毫秒)，给HTML生成等长时间操作更多时间
+  }, 36 * 60 * 1000) // 36分钟超时，需大于后端 TASK_TIMEOUT(30min)，超时链路：LLM(15min) < TASK(30min) < Sanic(35min) < 前端(36min)
 
   // // 文件问答传文件url
   // if (text.includes('表格数据')) {
@@ -42,6 +42,7 @@ export async function createOllama3Stylized(text, qa_type, uuid, chat_id, file_l
       chat_id,
       file_list,
       datasource_id,
+      ...(selected_skills?.length ? { selected_skills } : {}),
     }),
     signal: controller.signal, // 添加超时信号
   })
@@ -364,6 +365,39 @@ export async function stop_chat(task_id, qa_type) {
     }),
   })
   return fetch(req)
+}
+
+/**
+ * 恢复暂停的 Agent 对话（Agent 向用户提问后，用户回答继续执行）
+ * @param thread_id 对话线程ID
+ * @param user_input 用户回答
+ */
+export async function resumeChat(thread_id: string, user_input: string) {
+  const userStore = useUserStore()
+  const token = userStore.getUserToken()
+  const url = new URL(`${location.origin}/sanic/dify/resume_chat`)
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => {
+    controller.abort()
+  }, 36 * 60 * 1000)
+
+  const req = new Request(url, {
+    mode: 'cors',
+    method: 'post',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      thread_id,
+      user_input,
+    }),
+    signal: controller.signal,
+  })
+  return fetch(req).finally(() => {
+    clearTimeout(timeoutId)
+  })
 }
 
 // 数据源相关 API 请使用 `./datasource` 模块

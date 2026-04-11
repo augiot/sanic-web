@@ -9,6 +9,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     404: typeof import('./src/components/404.vue')['default']
+    AgentInputRequest: typeof import('./src/components/AgentInputRequest.vue')['default']
     ClipBoard: typeof import('./src/components/ClipBoard/index.vue')['default']
     DatasourceAuthModal: typeof import('./src/components/datasource/datasource-auth-modal.vue')['default']
     DatasourceForm: typeof import('./src/components/datasource/datasource-form.vue')['default']
@@ -70,6 +71,8 @@ declare module 'vue' {
     NSpin: typeof import('naive-ui')['NSpin']
     NStep: typeof import('naive-ui')['NStep']
     NSteps: typeof import('naive-ui')['NSteps']
+    NTab: typeof import('naive-ui')['NTab']
+    NTabs: typeof import('naive-ui')['NTabs']
     NTag: typeof import('naive-ui')['NTag']
     NText: typeof import('naive-ui')['NText']
     NTooltip: typeof import('naive-ui')['NTooltip']
@@ -78,6 +81,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SideBarItem: typeof import('./src/components/SideBar/Item.vue')['default']
+    SkillCommandPopup: typeof import('./src/components/SkillCommandPopup.vue')['default']
     TableList: typeof import('./src/components/TableList/index.vue')['default']
   }
 }

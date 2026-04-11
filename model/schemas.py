@@ -457,6 +457,14 @@ class LLMGetAnswerRequest(BaseModel):
     qa_type: str = Field(description="问答类型")
     file_list: List[Dict] = Field(default_factory=list, description="文件列表")
     datasource_id: Optional[int] = Field(None, description="数据源ID")
+    selected_skills: Optional[List[str]] = Field(None, description="选中的技能名称列表")
+
+
+class ResumeChatRequest(BaseModel):
+    """恢复暂停的 Agent 对话"""
+
+    thread_id: str = Field(description="对话线程ID")
+    user_input: str = Field(description="用户输入的回答")
 
 
 class DifyGetSuggestedRequest(BaseModel):

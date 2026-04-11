@@ -5,19 +5,26 @@ import { UAParser } from 'ua-parser-js'
 import * as GlobalAPI from '@/api'
 import { fetch_model_list, set_default_model } from '@/api/aimodel'
 import { fetch_datasource_list } from '@/api/datasource'
-import { isMockDevelopment } from '@/config'
 import SideBar from '@/components/Navigation/SideBar.vue'
-import DefaultPage from './default-page.vue'
-import FileListItem from '@/views/file/file-list-item.vue'
-import FileUploadManager from '@/views/file/file-upload-manager.vue'
-
-import SuggestedView from './suggested-page.vue'
+import { isMockDevelopment } from '@/config'
+import { usePageAgent } from '@/hooks/usePageAgent'
 import TableModal from '@/views/datasource/table-modal.vue'
+import FileListItem from '@/views/file/file-list-item.vue'
+
+import FileUploadManager from '@/views/file/file-upload-manager.vue'
+import SkillCommandPopup from '@/components/SkillCommandPopup.vue'
+import AgentInputRequest from '@/components/AgentInputRequest.vue'
+import { useSlashCommand } from '@/hooks/useSlashCommand'
+import { splitStream } from '@/components/MarkdownPreview/transform'
+import DefaultPage from './default-page.vue'
+import SuggestedView from './suggested-page.vue'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
 const userStore = useUserStore()
+
+const { initFromDefaultModel, destroyAgent, recreateAgent } = usePageAgent()
 
 // 显示默认页面
 const showDefaultPage = ref(true)
@@ -113,6 +120,7 @@ function newChat() {
     return
   }
   showDefaultPage.value = true
+  recreateAgent()
   isInit.value = true
   conversationItems.value = []
   stylizingLoading.value = false
@@ -149,7 +157,7 @@ function newChat() {
 
   // 重置所有问答类型的uuid
   uuids.value = {}
-  uuids.value['COMMON_QA'] = uuidv4()
+  uuids.value.COMMON_QA = uuidv4()
 }
 
 /**
@@ -185,7 +193,9 @@ const llmModelDropdownOptions = computed(() =>
 
 // 当前选中模型的名称
 const selectedLLMModelName = computed(() => {
-  if (!selectedLLMModelId.value) return ''
+  if (!selectedLLMModelId.value) {
+    return ''
+  }
   const model = llmModels.value.find((m) => m.id === selectedLLMModelId.value)
   return model?.name || ''
 })
@@ -217,7 +227,7 @@ const loadLLMModels = async () => {
 
 // 修改默认大模型（适配 Dropdown 的 select 事件，参数是 key）
 const handleLLMModelChange = async (key: number | string) => {
-  const modelId = typeof key === 'string' ? parseInt(key) : key
+  const modelId = typeof key === 'string' ? Number.parseInt(key) : key
   selectedLLMModelId.value = modelId
   const target = llmModels.value.find((m: any) => m.id === modelId)
   if (target?.name) {
@@ -242,6 +252,12 @@ const stylizingLoading = ref(false)
 // 输入字符串
 const inputTextString = ref('')
 const refInputTextString = ref<InputInst | null>()
+
+// 默认选中的对话类型
+const qa_type = ref('COMMON_QA')
+
+// 斜杠命令 - 技能选择
+const slashCmd = useSlashCommand(refInputTextString, inputTextString, computed(() => qa_type.value === 'COMMON_QA'))
 
 // 输出字符串 Reader 流（风格化的）
 const outputTextReader = ref<ReadableStreamDefaultReader | null>()
@@ -282,7 +298,7 @@ const onCompletedReader = (index: number) => {
     }
     // 隐藏加载动画（找到对应的 visibleIndex）
     const item = conversationItems.value[index]
-    const visibleIndex = visibleConversationItems.value.findIndex(vi => vi.uuid === item.uuid)
+    const visibleIndex = visibleConversationItems.value.findIndex((vi) => vi.uuid === item.uuid)
     if (visibleIndex >= 0) {
       // 设置所有对应同一个 originalIndex 的 visibleIndex 的加载状态为 false
       const assistantVisibleIndexes: number[] = [visibleIndex]
@@ -292,7 +308,7 @@ const onCompletedReader = (index: number) => {
           assistantVisibleIndexes.push(i)
         }
       }
-      assistantVisibleIndexes.forEach(vi => {
+      assistantVisibleIndexes.forEach((vi) => {
         if (contentLoadingStates.value[vi] !== undefined) {
           contentLoadingStates.value[vi] = false
         }
@@ -422,7 +438,7 @@ watch(
       contentLoadingStates.value.push(false)
     }
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 // 控制每个对话项的进度显示状态（用于隐藏 bars-scale）
@@ -446,7 +462,7 @@ const onProgressDisplayChange = (index: number, hasProgress: boolean) => {
 }
 
 // 存储每个对话项的步骤进度信息（使用 conversationItems 的索引作为键）
-const stepProgressStates = ref<Record<number, { stepName: string; status: string; progressId: string }>>({})
+const stepProgressStates = ref<Record<number, { stepName: string, status: string, progressId: string }>>({})
 
 // 监控 contentLoadingStates 和 progressDisplayStates 的变化，用于调试
 watch(
@@ -461,17 +477,19 @@ watch(
   (newStates) => {
     // 监控状态变化（用于调试，已移除调试日志）
   },
-  { deep: true }
+  { deep: true },
 )
 
 // 计算属性：根据 visibleConversationItems 的索引获取对应的步骤进度信息
 const getStepProgressForIndex = (visibleIndex: number) => {
   // 获取 visibleConversationItems 中对应索引的 item
   const item = visibleConversationItems.value[visibleIndex]
-  if (!item) return undefined
+  if (!item) {
+    return undefined
+  }
 
   // 找到该 item 在 conversationItems 中的原始索引
-  const originalIndex = conversationItems.value.findIndex(ci => ci.uuid === item.uuid)
+  const originalIndex = conversationItems.value.findIndex((ci) => ci.uuid === item.uuid)
 
   if (originalIndex >= 0) {
     return stepProgressStates.value[originalIndex]
@@ -487,7 +505,7 @@ const onStepProgress = (visibleIndex: number, progress: any) => {
     return
   }
 
-  const originalIndex = conversationItems.value.findIndex(ci => ci.uuid === item.uuid)
+  const originalIndex = conversationItems.value.findIndex((ci) => ci.uuid === item.uuid)
   if (originalIndex < 0) {
     return
   }
@@ -521,7 +539,7 @@ const onStepProgress = (visibleIndex: number, progress: any) => {
       }
 
       // 为所有相关的 visibleIndex 设置 contentLoadingStates
-      assistantVisibleIndexes.forEach(vi => {
+      assistantVisibleIndexes.forEach((vi) => {
         while (contentLoadingStates.value.length <= vi) {
           contentLoadingStates.value.push(false)
         }
@@ -539,7 +557,7 @@ const onStepProgress = (visibleIndex: number, progress: any) => {
           stepName: progress.stepName,
           status: progress.status,
           progressId: progress.progressId,
-        }
+        },
       }
 
       // 使用 nextTick 确保 DOM 更新
@@ -548,6 +566,129 @@ const onStepProgress = (visibleIndex: number, progress: any) => {
       })
     }
     // complete 状态不做任何操作，步骤信息会一直显示直到下一个步骤的 start 来替换
+  }
+}
+
+// ==================== Agent 交互式提问 ====================
+
+// 存储每个对话项的 agent 提问信息 { [originalIndex]: { question, threadId, answered, loading } }
+const agentInputRequests = ref<Record<number, {
+  question: string
+  threadId: string
+  answered: boolean
+  loading: boolean
+}>>({})
+
+// 获取对话项对应的 agent 提问信息
+const getAgentInputRequest = (item: any) => {
+  const originalIndex = conversationItems.value.findIndex(
+    (ci) => ci.uuid === item.uuid && ci.role === 'assistant',
+  )
+  return originalIndex >= 0 ? agentInputRequests.value[originalIndex] : undefined
+}
+
+// 处理 Agent 用户输入请求
+const onUserInputRequired = (visibleIndex: number, data: any) => {
+  const item = visibleConversationItems.value[visibleIndex]
+  if (!item) return
+  const originalIndex = conversationItems.value.findIndex((ci) => ci.uuid === item.uuid && ci.role === 'assistant')
+  if (originalIndex < 0) return
+
+  agentInputRequests.value = {
+    ...agentInputRequests.value,
+    [originalIndex]: {
+      question: data.question,
+      threadId: data.threadId,
+      answered: false,
+      loading: false,
+    },
+  }
+
+  // 停止 loading 动画
+  stylizingLoading.value = false
+  contentLoadingStates.value[visibleIndex] = false
+
+  nextTick(() => scrollToBottom())
+}
+
+// 处理用户提交回答
+const onAgentInputSubmit = async (originalIndex: number, payload: { threadId: string, userInput: string }) => {
+  const request = agentInputRequests.value[originalIndex]
+  if (!request) return
+
+  // 标记为加载中
+  request.loading = true
+
+  // 调用 resume API
+  const res = await GlobalAPI.resumeChat(payload.threadId, payload.userInput)
+
+  // 标记为已回答
+  request.answered = true
+  request.loading = false
+
+  if (res.status !== 200) {
+    message.error('恢复对话失败')
+    return
+  }
+
+  // 处理新的 SSE 流 - 追加到同一对话
+  stylizingLoading.value = true
+  const reader = res.body
+    ?.pipeThrough(new TextDecoderStream())
+    .pipeThrough(splitStream('\n'))
+    .pipeThrough(
+      new TransformStream({
+        transform: (chunk: string, controller: TransformStreamDefaultController) => {
+          try {
+            const trimmed = chunk.trim()
+            if (!trimmed.startsWith('data:')) return
+            const chunkData = trimmed.slice(5).trim()
+            if (!chunkData) return
+            const jsonChunk = JSON.parse(chunkData)
+
+            if (jsonChunk.task_id) {
+              businessStore.update_task_id(jsonChunk.task_id)
+            }
+
+            switch (jsonChunk.dataType) {
+              case 't02':
+                if (jsonChunk.data?.content) {
+                  controller.enqueue(JSON.stringify(jsonChunk.data))
+                }
+                break
+              case 't15':
+                if (jsonChunk.data?.type === 'user_input_required') {
+                  controller.enqueue(JSON.stringify({
+                    type: 'user_input_required',
+                    question: jsonChunk.data.question,
+                    threadId: jsonChunk.data.thread_id,
+                  }))
+                }
+                break
+              case 't99':
+                controller.enqueue(JSON.stringify({ done: true }))
+                break
+            }
+          }
+          catch (e) {
+            console.error('Error processing resume chunk:', e)
+          }
+        },
+        flush: (controller: TransformStreamDefaultController) => {
+          controller.terminate()
+        },
+      }),
+    )
+    .getReader()
+
+  if (reader && conversationItems.value[originalIndex]) {
+    // 给同一个 assistant 消息设置新的 reader，继续追加内容
+    conversationItems.value[originalIndex].reader = reader
+    contentLoadingStates.value[
+      visibleConversationItems.value.findIndex(
+        (vi) => vi.uuid === conversationItems.value[originalIndex].uuid && vi.role === 'assistant',
+      )
+    ] = true
   }
 }
 
@@ -609,9 +750,6 @@ const handleCreateStylized = async (
   // 设置背景颜色
   backgroundColorVariable.value = '#f6f7fb'
 
-  // 滚动到底部
-  scrollToBottom()
-
   // 设置初始化数据标识为false
   isInit.value = false
 
@@ -634,6 +772,7 @@ const handleCreateStylized = async (
   if (stylizingLoading.value) {
     // 停止dify 对话
     await GlobalAPI.stop_chat(businessStore.$state.task_id, currentQaType)
+    stylizingLoading.value = false
     onCompletedReader(conversationItems.value.length - 1)
     // 隐藏加载提示动画
     contentLoadingStates.value = contentLoadingStates.value.map(() => false)
@@ -673,6 +812,7 @@ const handleCreateStylized = async (
     // 新建对话 时输入新问题 清空历史数据
     conversationItems.value = []
     showDefaultPage.value = false
+    recreateAgent()
 
     // 清除所有步骤信息
     stepProgressStates.value = {}
@@ -707,7 +847,10 @@ const handleCreateStylized = async (
   const textContent = inputTextString.value
     ? inputTextString.value
     : send_text
+  // 保存当前选中的技能（在清空前）
+  const currentSelectedSkills = [...slashCmd.selectedSkills.value]
   inputTextString.value = ''
+  slashCmd.clearSelectedSkills()
 
   if (!uuids.value[currentQaType]) {
     uuids.value[currentQaType] = uuidv4()
@@ -758,6 +901,7 @@ const handleCreateStylized = async (
         file_list: upload_file_list,
         qa_type: currentQaType, // Pass qa_type explicitly
         datasource_id: selectedDatasource.value?.id,
+        selected_skills: currentSelectedSkills.length > 0 ? currentSelectedSkills : undefined,
       },
     )
 
@@ -828,7 +972,7 @@ const handleCreateStylized = async (
       // visibleConversationItems 是 computed，现在已经更新了
       // 找到新添加的 assistant 消息在 visibleConversationItems 中的索引
       // 必须同时匹配 uuid 和 role === 'assistant'，因为用户消息和 assistant 消息可能有相同的 uuid
-      const visibleIndex = visibleConversationItems.value.findIndex(vi => vi.uuid === uuid_str && vi.role === 'assistant')
+      const visibleIndex = visibleConversationItems.value.findIndex((vi) => vi.uuid === uuid_str && vi.role === 'assistant')
 
       if (visibleIndex >= 0) {
         // 确保数组长度足够
@@ -855,7 +999,7 @@ const handleCreateStylized = async (
               // 如果已有 chartData 且新数据包含推荐问题，则合并
               conversationItems.value[assistantIndex].chartData = {
                 ...currentChartData,
-                recommended_questions: newWriterList.data.recommended_questions
+                recommended_questions: newWriterList.data.recommended_questions,
               }
             } else {
               // 否则直接赋值（第一次或没有推荐问题时）
@@ -908,6 +1052,21 @@ const scrollToBottom = () => {
   }
 }
 
+// 输入框键盘事件拦截（斜杠命令优先）
+const onInputKeydown = (e: KeyboardEvent) => {
+  // 斜杠命令浮层打开时，优先处理键盘事件
+  if (slashCmd.handleKeydown(e)) {
+    e.preventDefault()
+    e.stopPropagation()
+    return
+  }
+  // 原有 Enter 发送逻辑
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    handleCreateStylized()
+  }
+}
+
 const keys = useMagicKeys()
 const enterCommand = keys.Enter
 const enterCtrl = keys.Enter
@@ -923,6 +1082,9 @@ const isMacos = parser.getOS().name.includes('Mac')
 const placeholder = computed(() => {
   if (stylizingLoading.value) {
     return `输入任意问题...`
+  }
+  if (qa_type.value === 'COMMON_QA') {
+    return `输入 / 选择技能，先思考后回答`
   }
   return `输入任意问题, 按 ${
     isMacos ? 'Command' : 'Ctrl'
@@ -1040,8 +1202,6 @@ const scrollToItem = async (uuid: string) => {
   }
 }
 
-// 默认选中的对话类型
-const qa_type = ref('COMMON_QA')
 const onAqtiveChange = (val, chat_id) => {
   qa_type.value = val
   businessStore.update_qa_type(val)
@@ -1068,7 +1228,7 @@ const onSuggested = (index: number) => {
   }
 
   // 获取当前对话的file_key（从最后一个用户消息中获取）
-  let currentFileKey: { source_file_key: string; parse_file_key: string; file_size: string }[] = []
+  let currentFileKey: { source_file_key: string, parse_file_key: string, file_size: string }[] = []
   if (conversationItems.value.length > 0) {
     // 从后往前查找最后一个用户消息的file_key
     for (let i = conversationItems.value.length - 1; i >= 0; i--) {
@@ -1277,11 +1437,11 @@ onMounted(async () => {
       const data = await res.json()
       datasourceList.value = data.data || []
     }
-  }
-  catch (e) {
+  } catch (e) {
     console.error(e)
   }
 
+  initFromDefaultModel()
 })
 
 // 在组件卸载前移除事件监听
@@ -1294,6 +1454,7 @@ onBeforeUnmount(() => {
     clearTimeout(scrollTimer)
     scrollTimer = null
   }
+  destroyAgent()
 })
 
 // ============================== 文件上传 ============================//
@@ -1308,7 +1469,7 @@ const fileUploadRef = ref<FileUploadRef | null>(null)
 const pendingUploadFileInfoList = ref([])
 
 // 新增：处理从DefaultPage来的提交
-const handleSubmitFromDefaultPage = (payload: { text: string, mode: string, datasource_id?: number }) => {
+const handleSubmitFromDefaultPage = (payload: { text: string, mode: string, datasource_id?: number, selected_skills?: string[] }) => {
   // 先清空之前的对话数据，确保切换类型时不会显示旧数据
   conversationItems.value = []
 
@@ -1322,14 +1483,21 @@ const handleSubmitFromDefaultPage = (payload: { text: string, mode: string, data
   onAqtiveChange(payload.mode, '') // Switch mode
   inputTextString.value = payload.text // Set text
 
+  // 设置技能选择（来自 default-page 的斜杠命令）
+  if (payload.selected_skills?.length) {
+    slashCmd.selectedSkills.value = [...payload.selected_skills]
+  } else {
+    slashCmd.selectedSkills.value = []
+  }
+
   // 从默认页开始新对话，更新Key
   chatTransitionKey.value = `new-chat-${Date.now()}`
 
   if (payload.datasource_id) {
-     const ds = datasourceList.value.find((d) => d.id === payload.datasource_id)
-     if (ds) {
-         selectedDatasource.value = ds
-     }
+    const ds = datasourceList.value.find((d) => d.id === payload.datasource_id)
+    if (ds) {
+      selectedDatasource.value = ds
+    }
   } else {
     // 如果不是数据问答或深度问数，清空选中的数据源
     if (payload.mode !== 'DATABASE_QA' && payload.mode !== 'REPORT_QA') {
@@ -1463,12 +1631,12 @@ const loadConversationHistory = async (item: any, reset: boolean = true, loadOld
 
   try {
     const meta = await fetchConversationHistory(
-    isInit,
-    conversationItems,
-    tableData,
-    currentRenderIndex,
-    item,
-    '',
+      isInit,
+      conversationItems,
+      tableData,
+      currentRenderIndex,
+      item,
+      '',
       pageToLoad,
       conversationHistoryPageSize,
       append,
@@ -1563,7 +1731,7 @@ const handleConversationScroll = () => {
       }
     }
 
-    const currentItem = tableData.value.find(item => item.chat_id === currentConversationChatId.value)
+    const currentItem = tableData.value.find((item) => item.chat_id === currentConversationChatId.value)
     if (!currentItem) {
       return
     }
@@ -1602,7 +1770,11 @@ const handleHistoryClick = async (item: any) => {
   await loadConversationHistory(item, true)
 
   // 关闭默认页面
+  const wasDefaultPage = showDefaultPage.value
   showDefaultPage.value = false
+  if (wasDefaultPage) {
+    recreateAgent()
+  }
 
   //   等待 DOM 更新完成
   await nextTick()
@@ -1623,26 +1795,26 @@ const handleHistoryClick = async (item: any) => {
 
   if (item.qa_type === 'DATABASE_QA' || item.qa_type === 'REPORT_QA') {
     if (item.datasource_id) {
-       // 先尝试从数据源列表中找到
-       const ds = datasourceList.value.find((d) => d.id === item.datasource_id)
-       if (ds) {
-           selectedDatasource.value = ds
-       } else if (item.datasource_name) {
-           // 如果数据源列表中找不到，使用历史记录中的名称创建临时对象
-           // 确保对象有 name 属性，用于显示
-           selectedDatasource.value = {
-             id: item.datasource_id,
-             name: item.datasource_name,
-             type: item.datasource_type || 'Datasource'
-           }
-       } else {
-           // 如果既找不到数据源，也没有名称，尝试使用数据源ID创建临时对象
-           selectedDatasource.value = {
-             id: item.datasource_id,
-             name: `数据源 ${item.datasource_id}`,
-             type: 'Datasource'
-           }
-       }
+      // 先尝试从数据源列表中找到
+      const ds = datasourceList.value.find((d) => d.id === item.datasource_id)
+      if (ds) {
+        selectedDatasource.value = ds
+      } else if (item.datasource_name) {
+        // 如果数据源列表中找不到，使用历史记录中的名称创建临时对象
+        // 确保对象有 name 属性，用于显示
+        selectedDatasource.value = {
+          id: item.datasource_id,
+          name: item.datasource_name,
+          type: item.datasource_type || 'Datasource',
+        }
+      } else {
+        // 如果既找不到数据源，也没有名称，尝试使用数据源ID创建临时对象
+        selectedDatasource.value = {
+          id: item.datasource_id,
+          name: `数据源 ${item.datasource_id}`,
+          type: 'Datasource',
+        }
+      }
     } else {
       // 如果没有数据源ID，清空选中的数据源
       selectedDatasource.value = null
@@ -1662,7 +1834,7 @@ const handleHistoryClick = async (item: any) => {
       datasource_name: item.datasource_name,
       selectedDatasource: selectedDatasource.value,
       currentQaOption: currentQaOption.value,
-      showModeSelector: showModeSelector.value
+      showModeSelector: showModeSelector.value,
     })
   }
 }
@@ -1763,7 +1935,11 @@ const handleHistoryClick = async (item: any) => {
               加载中...
             </div>
 
-            <TransitionGroup name="list" tag="div" class="relative">
+            <TransitionGroup
+              name="list"
+              tag="div"
+              class="relative"
+            >
               <div
                 v-for="(item, index) in tableData"
                 :key="item.uuid"
@@ -1884,7 +2060,10 @@ const handleHistoryClick = async (item: any) => {
             class="scrollable-container"
             @scroll="handleScroll"
           >
-            <transition name="page-fade" mode="out-in">
+            <transition
+              name="page-fade"
+              mode="out-in"
+            >
               <div
                 v-if="showDefaultPage"
                 key="default-page"
@@ -1901,289 +2080,332 @@ const handleHistoryClick = async (item: any) => {
                 :key="chatTransitionKey"
                 class="min-h-full"
               >
-              <div
-                v-for="(item, index) in visibleConversationItems"
-                :key="index"
-                :ref="(el) => setMarkdownPreview(item.uuid, item.role, el)"
-                class="mb-4"
-              >
                 <div
-                  v-if="item.role === 'user'"
-                  class="flex flex-col items-end space-y-2 w-full max-w-[890px] mx-auto"
+                  v-for="(item, index) in visibleConversationItems"
+                  :key="index"
+                  :ref="(el) => setMarkdownPreview(item.uuid, item.role, el)"
+                  class="mb-4"
                 >
-                  <!-- 用户消息 -->
                   <div
-                    :style="{
-                      'margin-left': `0`,
-                      'margin-right': `0`,
-                      'padding': `15px 0`,
-                      'border-radius': `5px`,
-                      'text-align': `center`,
-                      'max-width': '100%',
-                    }"
+                    v-if="item.role === 'user'"
+                    class="flex flex-col items-end space-y-2 w-full max-w-[890px] mx-auto"
                   >
-                    <n-space justify="center">
-                      <div
-                        :style="{
-                          'fontSize': '16px',
-                          'fontFamily': `'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, 'Noto Sans SC', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji'`,
-                          'fontWeight': '400',
-                          'color': '#1a1a1a',
-                          'backgroundColor': '#f5f7ff',
-                          'borderRadius': '12px',
-                          'max-width': '800px',
-                          'text-align': 'left',
-                          'padding': '12px 20px',
-                          'line-height': 1.625,
-                          'letter-spacing': '0',
-                          'word-wrap': 'break-word',
-                          'word-break': 'break-all',
-                          'white-space': 'pre-wrap',
-                          '-webkit-font-smoothing': 'antialiased',
-                          '-moz-osx-font-smoothing': 'grayscale',
-                        }"
-                      >
-                        {{ item.question }}
-                      </div>
-                    </n-space>
+                    <!-- 用户消息 -->
+                    <div
+                      :style="{
+                        'margin-left': `0`,
+                        'margin-right': `0`,
+                        'padding': `15px 0`,
+                        'border-radius': `5px`,
+                        'text-align': `center`,
+                        'max-width': '100%',
+                      }"
+                    >
+                      <n-space justify="center">
+                        <div
+                          :style="{
+                            'fontSize': '16px',
+                            'fontFamily': `'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, 'Noto Sans SC', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji'`,
+                            'fontWeight': '400',
+                            'color': '#1a1a1a',
+                            'backgroundColor': '#f5f7ff',
+                            'borderRadius': '12px',
+                            'max-width': '800px',
+                            'text-align': 'left',
+                            'padding': '12px 20px',
+                            'line-height': 1.625,
+                            'letter-spacing': '0',
+                            'word-wrap': 'break-word',
+                            'word-break': 'break-all',
+                            'white-space': 'pre-wrap',
+                            '-webkit-font-smoothing': 'antialiased',
+                            '-moz-osx-font-smoothing': 'grayscale',
+                          }"
+                        >
+                          {{ item.question }}
+                        </div>
+                      </n-space>
+                    </div>
+
+                    <!-- 用户上传的文件列表 -->
+                    <div
+                      v-if="item.file_key && item.file_key.length > 0"
+                      class="upload-wrapper-list flex flex-wrap gap-10 items-center pb-5"
+                      style="margin-left: 0; margin-right: 0; width: 100%; justify-content: flex-end;"
+                    >
+                      <FileListItem
+                        v-for="(file, fileIndex) in item.file_key"
+                        :key="fileIndex"
+                        :file="file"
+                      />
+                    </div>
                   </div>
 
-                  <!-- 用户上传的文件列表 -->
                   <div
-                    v-if="item.file_key && item.file_key.length > 0"
-                    class="upload-wrapper-list flex flex-wrap gap-10 items-center pb-5"
-                    style="margin-left: 0; margin-right: 0; width: 100%; justify-content: flex-end;"
+                    v-if="item.role === 'assistant'"
+                    class="max-w-[890px] w-full mx-auto"
                   >
-                    <FileListItem
-                      v-for="(file, fileIndex) in item.file_key"
-                      :key="fileIndex"
-                      :file="file"
+                    <!-- Assistant 消息的加载动画和步骤信息 -->
+                    <div
+                      v-if="contentLoadingStates[index] && !progressDisplayStates[index]"
+                      class="flex items-center gap-2 mb-2"
+                      :data-debug-svg="JSON.stringify({ index, itemRole: item.role, itemUuid: item.uuid, contentLoadingState: contentLoadingStates[index], progressDisplayState: progressDisplayStates[index], conditionResult: contentLoadingStates[index] && !progressDisplayStates[index], contentLoadingStatesLength: contentLoadingStates.length })"
+                    >
+                      <!-- 星星动画 -->
+                      <div
+                        class="star-spinner"
+                        :style="{
+                          width: `24px`,
+                          height: `24px`,
+                        }"
+                      >
+                        <svg
+                          width="24"
+                          height="24"
+                          viewBox="0 0 24 24"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <!-- 中心星星 -->
+                          <g class="star-group star-center">
+                            <path
+                              d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
+                              fill="#b1adf3"
+                              class="star-path"
+                            />
+                          </g>
+                          <!-- 围绕中心旋转的星星1 (上方) -->
+                          <g
+                            class="star-group star-1"
+                            transform="translate(12, 12)"
+                          >
+                            <path
+                              d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
+                              fill="#b1adf3"
+                              class="star-path"
+                              transform="scale(0.5) translate(0, -16)"
+                            />
+                          </g>
+                          <!-- 围绕中心旋转的星星2 (右侧) -->
+                          <g
+                            class="star-group star-2"
+                            transform="translate(12, 12)"
+                          >
+                            <path
+                              d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
+                              fill="#b1adf3"
+                              class="star-path"
+                              transform="scale(0.5) translate(16, 0)"
+                            />
+                          </g>
+                          <!-- 围绕中心旋转的星星3 (下方) -->
+                          <g
+                            class="star-group star-3"
+                            transform="translate(12, 12)"
+                          >
+                            <path
+                              d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
+                              fill="#b1adf3"
+                              class="star-path"
+                              transform="scale(0.5) translate(0, 16)"
+                            />
+                          </g>
+                          <!-- 围绕中心旋转的星星4 (左侧) -->
+                          <g
+                            class="star-group star-4"
+                            transform="translate(12, 12)"
+                          >
+                            <path
+                              d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
+                              fill="#b1adf3"
+                              class="star-path"
+                              transform="scale(0.5) translate(-16, 0)"
+                            />
+                          </g>
+                        </svg>
+                      </div>
+                      <!-- 步骤信息显示 -->
+                      <transition
+                        name="step-fade"
+                        mode="out-in"
+                      >
+                        <div
+                          v-if="getStepProgressForIndex(index)"
+                          :key="`step-${index}-${getStepProgressForIndex(index)?.progressId}`"
+                          class="step-progress-text"
+                        >
+                          {{ getStepProgressForIndex(index)?.stepName }}
+                        </div>
+                      </transition>
+                    </div>
+                    <!-- 单独显示步骤信息（当进度组件显示时，只显示步骤信息，不显示星星） -->
+                    <div
+                      v-else-if="getStepProgressForIndex(index) && progressDisplayStates[index]"
+                      class="flex items-center gap-2 mb-2"
+                    >
+                      <transition
+                        name="step-fade"
+                        mode="out-in"
+                      >
+                        <div
+                          :key="`step-${index}-${getStepProgressForIndex(index)?.progressId}`"
+                          class="step-progress-text"
+                        >
+                          {{ getStepProgressForIndex(index)?.stepName }}
+                        </div>
+                      </transition>
+                    </div>
+                    <MarkdownPreview
+                      :reader="item.reader"
+                      :model="defaultLLMTypeForStream"
+                      :is-init="isInit"
+                      :is-view="isView"
+                      :qa-type="`${item.qa_type}`"
+                      :chart-id="`${index}devID${generateRandomSuffix()}`"
+                      :chart-data="item.chartData"
+                      :record-id="item.record_id"
+                      :parent-scoll-bottom-method="scrollToBottom"
+                      @failed="() => onFailedReader(index)"
+                      @completed="() => onCompletedReader(index)"
+                      @chartready="() => onChartReady(index + 1)"
+                      @recycle-qa="() => onRecycleQa(index)"
+                      @praise-fead-back="() => onPraiseFeadBack(index)"
+                      @progress-display-change="(hasProgress: boolean) => onProgressDisplayChange(index, hasProgress)"
+                      @step-progress="(progress: any) => onStepProgress(index, progress)"
+                      @user-input-required="(data: any) => onUserInputRequired(index, data)"
+                      @belittle-feedback="
+                        () => onBelittleFeedback(index)
+                      "
+                      @begin-read="() => onBeginRead(index)"
+                      @suggested="(question) => handleCreateStylized(question)"
+                    />
+                    <!-- Agent 交互式提问 -->
+                    <AgentInputRequest
+                      v-if="getAgentInputRequest(item)"
+                      :question="getAgentInputRequest(item)!.question"
+                      :thread-id="getAgentInputRequest(item)!.threadId"
+                      :loading="getAgentInputRequest(item)!.loading"
+                      :answered="getAgentInputRequest(item)!.answered"
+                      @submit="(payload) => onAgentInputSubmit(conversationItems.findIndex((ci) => ci.uuid === item.uuid && ci.role === 'assistant'), payload)"
                     />
                   </div>
                 </div>
 
-                <div
-                  v-if="item.role === 'assistant'"
-                  class="max-w-[890px] w-full mx-auto"
-                >
-                  <!-- Assistant 消息的加载动画和步骤信息 -->
+                <!-- 底部加载更多提示（滚动到底部加载时显示） -->
+                <transition name="fade">
                   <div
-                    v-if="contentLoadingStates[index] && !progressDisplayStates[index]"
-                    class="flex items-center gap-2 mb-2"
-                    :data-debug-svg="JSON.stringify({index,itemRole:item.role,itemUuid:item.uuid,contentLoadingState:contentLoadingStates[index],progressDisplayState:progressDisplayStates[index],conditionResult:contentLoadingStates[index] && !progressDisplayStates[index],contentLoadingStatesLength:contentLoadingStates.length})"
+                    v-if="isView && isLoadingMoreConversationHistory"
+                    class="flex justify-center items-center py-2 conversation-loading-indicator conversation-loading-indicator--bottom"
                   >
-                    <!-- 星星动画 -->
-                    <div
-                      class="star-spinner"
-                      :style="{
-                        'width': `24px`,
-                        'height': `24px`,
-                      }"
-                    >
-                      <svg
-                        width="24"
-                        height="24"
-                        viewBox="0 0 24 24"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <!-- 中心星星 -->
-                        <g class="star-group star-center">
-                          <path
-                            d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
-                            fill="#b1adf3"
-                            class="star-path"
-                          />
-                        </g>
-                        <!-- 围绕中心旋转的星星1 (上方) -->
-                        <g class="star-group star-1" transform="translate(12, 12)">
-                          <path
-                            d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
-                            fill="#b1adf3"
-                            class="star-path"
-                            transform="scale(0.5) translate(0, -16)"
-                          />
-                        </g>
-                        <!-- 围绕中心旋转的星星2 (右侧) -->
-                        <g class="star-group star-2" transform="translate(12, 12)">
-                          <path
-                            d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
-                            fill="#b1adf3"
-                            class="star-path"
-                            transform="scale(0.5) translate(16, 0)"
-                          />
-                        </g>
-                        <!-- 围绕中心旋转的星星3 (下方) -->
-                        <g class="star-group star-3" transform="translate(12, 12)">
-                          <path
-                            d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
-                            fill="#b1adf3"
-                            class="star-path"
-                            transform="scale(0.5) translate(0, 16)"
-                          />
-                        </g>
-                        <!-- 围绕中心旋转的星星4 (左侧) -->
-                        <g class="star-group star-4" transform="translate(12, 12)">
-                          <path
-                            d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
-                            fill="#b1adf3"
-                            class="star-path"
-                            transform="scale(0.5) translate(-16, 0)"
-                          />
-                        </g>
-                      </svg>
+                    <div class="flex items-center gap-2 text-[#999] text-[13px]">
+                      <div class="i-svg-spinners:dots-scale-middle text-14 text-[#7E6BF2]"></div>
+                      <span>加载更多...</span>
                     </div>
-                    <!-- 步骤信息显示 -->
-                    <transition name="step-fade" mode="out-in">
-                      <div
-                        v-if="getStepProgressForIndex(index)"
-                        :key="`step-${index}-${getStepProgressForIndex(index)?.progressId}`"
-                        class="step-progress-text"
-                      >
-                        {{ getStepProgressForIndex(index)?.stepName }}
-                      </div>
-                    </transition>
                   </div>
-                  <!-- 单独显示步骤信息（当进度组件显示时，只显示步骤信息，不显示星星） -->
+                </transition>
+
+                <!-- 顶部加载更旧消息提示（滚动到顶部加载时显示） -->
+                <transition name="fade">
                   <div
-                    v-else-if="getStepProgressForIndex(index) && progressDisplayStates[index]"
-                    class="flex items-center gap-2 mb-2"
+                    v-if="isView && isLoadingConversationHistory && conversationHistoryMinLoadedPage > 1"
+                    class="flex justify-center items-center py-2 conversation-loading-indicator conversation-loading-indicator--top"
                   >
-                    <transition name="step-fade" mode="out-in">
-                      <div
-                        :key="`step-${index}-${getStepProgressForIndex(index)?.progressId}`"
-                        class="step-progress-text"
-                      >
-                        {{ getStepProgressForIndex(index)?.stepName }}
-                      </div>
-                    </transition>
+                    <div class="flex items-center gap-2 text-[#999] text-[13px]">
+                      <div class="i-svg-spinners:dots-scale-middle text-14 text-[#7E6BF2]"></div>
+                      <span>加载更早的消息...</span>
+                    </div>
                   </div>
-                  <MarkdownPreview
-                    :reader="item.reader"
-                    :model="defaultLLMTypeForStream"
-                    :is-init="isInit"
-                    :is-view="isView"
-                    :qa-type="`${item.qa_type}`"
-                    :chart-id="`${index}devID${generateRandomSuffix()}`"
-                    :chart-data="item.chartData"
-                    :record-id="item.record_id"
-                    :parent-scoll-bottom-method="scrollToBottom"
-                    @failed="() => onFailedReader(index)"
-                    @completed="() => onCompletedReader(index)"
-                    @chartready="() => onChartReady(index + 1)"
-                    @recycle-qa="() => onRecycleQa(index)"
-                    @praise-fead-back="() => onPraiseFeadBack(index)"
-                    @progress-display-change="(hasProgress: boolean) => onProgressDisplayChange(index, hasProgress)"
-                    @step-progress="(progress: any) => onStepProgress(index, progress)"
-                    @belittle-feedback="
-                      () => onBelittleFeedback(index)
-                    "
-                    @begin-read="() => onBeginRead(index)"
-                    @suggested="(question) => handleCreateStylized(question)"
+                </transition>
+
+                <div
+                  v-if="!isInit && !stylizingLoading"
+                  class="w-70% ml-11% mt-[-20] bg-#f6f7fb"
+                >
+                  <SuggestedView
+                    :labels="suggested_array"
+                    @suggested="onSuggested"
                   />
                 </div>
-              </div>
 
-            <!-- 底部加载更多提示（滚动到底部加载时显示） -->
-            <transition name="fade">
-              <div
-                v-if="isView && isLoadingMoreConversationHistory"
-                class="flex justify-center items-center py-2 conversation-loading-indicator conversation-loading-indicator--bottom"
-              >
-                <div class="flex items-center gap-2 text-[#999] text-[13px]">
-                  <div class="i-svg-spinners:dots-scale-middle text-14 text-[#7E6BF2]"></div>
-                  <span>加载更多...</span>
-                </div>
-              </div>
-            </transition>
-
-            <!-- 顶部加载更旧消息提示（滚动到顶部加载时显示） -->
-            <transition name="fade">
-              <div
-                v-if="isView && isLoadingConversationHistory && conversationHistoryMinLoadedPage > 1"
-                class="flex justify-center items-center py-2 conversation-loading-indicator conversation-loading-indicator--top"
-              >
-                <div class="flex items-center gap-2 text-[#999] text-[13px]">
-                  <div class="i-svg-spinners:dots-scale-middle text-14 text-[#7E6BF2]"></div>
-                  <span>加载更早的消息...</span>
-                </div>
-              </div>
-            </transition>
-
-            <div
-              v-if="!isInit && !stylizingLoading"
-              class="w-70% ml-11% mt-[-20] bg-#f6f7fb"
-            >
-              <SuggestedView
-                :labels="suggested_array"
-                @suggested="onSuggested"
-              />
-            </div>
-
-            <!-- 底部等待动画（智能问答和深度问数） -->
-            <transition name="fade">
-              <div
-                v-if="stylizingLoading && (qa_type === 'COMMON_QA' || qa_type === 'REPORT_QA') && !isView"
-                class="flex items-center justify-start pt-2 pb-2 bottom-loading-indicator max-w-[890px] w-full mx-auto"
-                style="padding-left: 15px;"
-              >
-                <div class="flex items-center gap-2">
-                  <div class="star-spinner" :style="{ width: '24px', height: '24px' }">
-                    <svg
-                      width="24"
-                      height="24"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <!-- 中心星星 -->
-                      <g class="star-group star-center">
-                        <path
-                          d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
-                          fill="#b1adf3"
-                          class="star-path"
-                        />
-                      </g>
-                      <!-- 围绕中心旋转的星星1 (上方) -->
-                      <g class="star-group star-1" transform="translate(12, 12)">
-                        <path
-                          d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
-                          fill="#b1adf3"
-                          class="star-path"
-                          transform="scale(0.5) translate(0, -16)"
-                        />
-                      </g>
-                      <!-- 围绕中心旋转的星星2 (右侧) -->
-                      <g class="star-group star-2" transform="translate(12, 12)">
-                        <path
-                          d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
-                          fill="#b1adf3"
-                          class="star-path"
-                          transform="scale(0.5) translate(16, 0)"
-                        />
-                      </g>
-                      <!-- 围绕中心旋转的星星3 (下方) -->
-                      <g class="star-group star-3" transform="translate(12, 12)">
-                        <path
-                          d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
-                          fill="#b1adf3"
-                          class="star-path"
-                          transform="scale(0.5) translate(0, 16)"
-                        />
-                      </g>
-                      <!-- 围绕中心旋转的星星4 (左侧) -->
-                      <g class="star-group star-4" transform="translate(12, 12)">
-                        <path
-                          d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
-                          fill="#b1adf3"
-                          class="star-path"
-                          transform="scale(0.5) translate(-16, 0)"
-                        />
-                      </g>
-                    </svg>
+                <!-- 底部等待动画（智能问答和深度问数） -->
+                <transition name="fade">
+                  <div
+                    v-if="stylizingLoading && (qa_type === 'COMMON_QA' || qa_type === 'REPORT_QA') && !isView"
+                    class="flex items-center justify-start pt-2 pb-2 bottom-loading-indicator max-w-[890px] w-full mx-auto"
+                    style="padding-left: 15px;"
+                  >
+                    <div class="flex items-center gap-2">
+                      <div
+                        class="star-spinner"
+                        :style="{ width: '24px', height: '24px' }"
+                      >
+                        <svg
+                          width="24"
+                          height="24"
+                          viewBox="0 0 24 24"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <!-- 中心星星 -->
+                          <g class="star-group star-center">
+                            <path
+                              d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
+                              fill="#b1adf3"
+                              class="star-path"
+                            />
+                          </g>
+                          <!-- 围绕中心旋转的星星1 (上方) -->
+                          <g
+                            class="star-group star-1"
+                            transform="translate(12, 12)"
+                          >
+                            <path
+                              d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
+                              fill="#b1adf3"
+                              class="star-path"
+                              transform="scale(0.5) translate(0, -16)"
+                            />
+                          </g>
+                          <!-- 围绕中心旋转的星星2 (右侧) -->
+                          <g
+                            class="star-group star-2"
+                            transform="translate(12, 12)"
+                          >
+                            <path
+                              d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
+                              fill="#b1adf3"
+                              class="star-path"
+                              transform="scale(0.5) translate(16, 0)"
+                            />
+                          </g>
+                          <!-- 围绕中心旋转的星星3 (下方) -->
+                          <g
+                            class="star-group star-3"
+                            transform="translate(12, 12)"
+                          >
+                            <path
+                              d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
+                              fill="#b1adf3"
+                              class="star-path"
+                              transform="scale(0.5) translate(0, 16)"
+                            />
+                          </g>
+                          <!-- 围绕中心旋转的星星4 (左侧) -->
+                          <g
+                            class="star-group star-4"
+                            transform="translate(12, 12)"
+                          >
+                            <path
+                              d="M12 2L14.09 8.26L20 9.27L15 13.14L16.18 19.02L12 15.77L7.82 19.02L9 13.14L4 9.27L9.91 8.26L12 2Z"
+                              fill="#b1adf3"
+                              class="star-path"
+                              transform="scale(0.5) translate(-16, 0)"
+                            />
+                          </g>
+                        </svg>
+                      </div>
+                      <span class="text-[#999] text-[13px]">正在思考中...</span>
+                    </div>
                   </div>
-                  <span class="text-[#999] text-[13px]">正在思考中...</span>
-                </div>
-              </div>
-            </transition>
+                </transition>
               </div>
             </transition>
           </div>
@@ -2210,16 +2432,44 @@ const handleHistoryClick = async (item: any) => {
               />
 
               <!-- Middle: Input -->
-              <div class="input-wrapper w-full">
+              <div class="input-wrapper w-full" style="position: relative;">
+                <!-- 技能选择浮层 -->
+                <SkillCommandPopup
+                  v-if="qa_type === 'COMMON_QA'"
+                  :visible="slashCmd.showPopup.value"
+                  :skills="slashCmd.filteredSkills.value"
+                  :filter-text="slashCmd.filterText.value"
+                  :highlight-index="slashCmd.highlightIndex.value"
+                  @select="slashCmd.selectSkill"
+                  @close="slashCmd.closePopup"
+                />
                 <n-input
                   ref="refInputTextString"
                   v-model:value="inputTextString"
                   type="textarea"
-                  placeholder="先思考后回答，解决更有难度的问题"
+                  :placeholder="placeholder"
                   :autosize="{ minRows: 1, maxRows: 6 }"
                   class="custom-chat-input"
-                  @keydown.enter.prevent="handleCreateStylized()"
+                  @keydown="onInputKeydown"
                 />
+                <!-- 已选技能 pills -->
+                <div
+                  v-if="qa_type === 'COMMON_QA' && slashCmd.selectedSkills.value.length > 0"
+                  class="selected-skills-bar"
+                >
+                  <div
+                    v-for="skill in slashCmd.selectedSkills.value"
+                    :key="skill"
+                    class="skill-pill-tag"
+                  >
+                    <div class="i-hugeicons:magic-wand-01 text-12"></div>
+                    <span>{{ skill }}</span>
+                    <div
+                      class="i-hugeicons:cancel-01 text-12 cursor-pointer opacity-60 hover:opacity-100"
+                      @click="slashCmd.removeSkill(skill)"
+                    ></div>
+                  </div>
+                </div>
               </div>
 
               <!-- Bottom: Footer Actions -->
@@ -2259,127 +2509,153 @@ const handleHistoryClick = async (item: any) => {
                       v-for="opt in qaOptions"
                       :key="opt.value"
                     >
-                        <!-- 数据问答弹窗 -->
-                        <n-popover
-                          v-if="opt.value === 'DATABASE_QA'"
-                          trigger="manual"
-                          v-model:show="showDatasourcePopover"
-                          placement="top"
-                          :show-arrow="false"
-                          class="!p-0"
-                          style="padding: 0;"
-                          @clickoutside="showDatasourcePopover = false"
-                        >
-                          <template #trigger>
+                      <!-- 数据问答弹窗 -->
+                      <n-popover
+                        v-if="opt.value === 'DATABASE_QA'"
+                        v-model:show="showDatasourcePopover"
+                        trigger="manual"
+                        placement="top"
+                        :show-arrow="false"
+                        class="!p-0"
+                        style="padding: 0;"
+                        @clickoutside="showDatasourcePopover = false"
+                      >
+                        <template #trigger>
+                          <div
+                            class="mode-icon-btn"
+                            :class="{ active: qa_type === opt.value || showDatasourcePopover }"
+                            :style="{
+                              '--active-color': opt.color,
+                              '--active-bg': `${opt.color}15`,
+                            }"
+                            @click.stop="showDatasourcePopover = true; showReportQaDatasourcePopover = false"
+                          >
                             <div
-                              class="mode-icon-btn"
-                              :class="{ active: qa_type === opt.value || showDatasourcePopover }"
-                              :style="{
-                                '--active-color': opt.color,
-                                '--active-bg': `${opt.color}15`,
-                              }"
-                              @click.stop="showDatasourcePopover = true; showReportQaDatasourcePopover = false"
+                              :class="opt.icon"
+                              class="text-14"
+                              :style="{ color: opt.color }"
+                            ></div>
+                            <span class="mode-icon-label">{{ opt.label }}</span>
+                            <div class="i-hugeicons:arrow-down-01 text-12 text-gray-400 ml-1"></div>
+                          </div>
+                        </template>
+                        <div class="flex flex-col min-w-[200px] max-w-[280px] bg-white rounded-xl shadow-2xl border border-gray-100 p-3">
+                          <div class="max-h-[360px] overflow-y-auto custom-scrollbar pr-1">
+                            <div
+                              v-for="ds in datasourceList"
+                              :key="ds.id"
+                              class="group flex items-center gap-2.5 px-3 py-2.5 mb-1.5 last:mb-0 hover:bg-[#F5F3FF] cursor-pointer rounded-lg transition-all duration-200 border border-transparent hover:border-[#DDD6FE]"
+                              :class="{ 'bg-[#F5F3FF] border-[#DDD6FE]': selectedDatasource?.id === ds.id }"
+                              @click="handleDatasourceSelect(ds)"
                             >
                               <div
-                                :class="opt.icon"
-                                class="text-14"
-                                :style="{ color: opt.color }"
-                              ></div>
-                              <span class="mode-icon-label">{{ opt.label }}</span>
-                              <div class="i-hugeicons:arrow-down-01 text-12 text-gray-400 ml-1"></div>
-                            </div>
-                          </template>
-                          <div class="flex flex-col min-w-[200px] max-w-[280px] bg-white rounded-xl shadow-2xl border border-gray-100 p-3">
-                            <div class="max-h-[360px] overflow-y-auto custom-scrollbar pr-1">
-                              <div
-                                v-for="ds in datasourceList"
-                                :key="ds.id"
-                                class="group flex items-center gap-2.5 px-3 py-2.5 mb-1.5 last:mb-0 hover:bg-[#F5F3FF] cursor-pointer rounded-lg transition-all duration-200 border border-transparent hover:border-[#DDD6FE]"
-                                :class="{ 'bg-[#F5F3FF] border-[#DDD6FE]': selectedDatasource?.id === ds.id }"
-                                @click="handleDatasourceSelect(ds)"
+                                class="flex-shrink-0 w-7 h-7 rounded-lg bg-gray-50 flex items-center justify-center group-hover:bg-white transition-colors"
+                                :class="{ 'bg-white': selectedDatasource?.id === ds.id }"
                               >
                                 <div
-                                  class="flex-shrink-0 w-7 h-7 rounded-lg bg-gray-50 flex items-center justify-center group-hover:bg-white transition-colors"
-                                  :class="{ 'bg-white': selectedDatasource?.id === ds.id }"
-                                >
-                                  <div class="i-hugeicons:database-01 text-15 text-gray-400 group-hover:text-[#7E6BF2]" :class="{ 'text-[#7E6BF2]': selectedDatasource?.id === ds.id }"></div>
-                                </div>
-                                <span class="text-14 text-gray-700 font-medium group-hover:text-[#7E6BF2] truncate flex-1 min-w-0" :class="{ 'text-[#7E6BF2]': selectedDatasource?.id === ds.id }" :title="`${ds.name}-${ds.type || 'Datasource'}`">
-                                  {{ ds.name }}-{{ ds.type || 'Datasource' }}
-                                </span>
-                                <div v-if="selectedDatasource?.id === ds.id" class="flex-shrink-0">
-                                  <div class="i-hugeicons:tick-02 text-15 text-[#7E6BF2]"></div>
-                                </div>
+                                  class="i-hugeicons:database-01 text-15 text-gray-400 group-hover:text-[#7E6BF2]"
+                                  :class="{ 'text-[#7E6BF2]': selectedDatasource?.id === ds.id }"
+                                ></div>
                               </div>
-
-                              <div v-if="!datasourceList.length" class="flex flex-col items-center justify-center py-10 text-gray-400 gap-2">
-                                <div class="i-hugeicons:database-01 text-24 opacity-20"></div>
-                                <span class="text-13">暂无可用数据源</span>
+                              <span
+                                class="text-14 text-gray-700 font-medium group-hover:text-[#7E6BF2] truncate flex-1 min-w-0"
+                                :class="{ 'text-[#7E6BF2]': selectedDatasource?.id === ds.id }"
+                                :title="`${ds.name}-${ds.type || 'Datasource'}`"
+                              >
+                                {{ ds.name }}-{{ ds.type || 'Datasource' }}
+                              </span>
+                              <div
+                                v-if="selectedDatasource?.id === ds.id"
+                                class="flex-shrink-0"
+                              >
+                                <div class="i-hugeicons:tick-02 text-15 text-[#7E6BF2]"></div>
                               </div>
                             </div>
-                          </div>
-                        </n-popover>
 
-                        <!-- 深度问数弹窗 -->
-                        <n-popover
-                          v-if="opt.value === 'REPORT_QA'"
-                          trigger="manual"
-                          v-model:show="showReportQaDatasourcePopover"
-                          placement="top"
-                          :show-arrow="false"
-                          class="!p-0"
-                          style="padding: 0;"
-                          @clickoutside="showReportQaDatasourcePopover = false"
-                        >
-                          <template #trigger>
                             <div
-                              class="mode-icon-btn"
-                              :class="{ active: qa_type === opt.value || showReportQaDatasourcePopover }"
-                              :style="{
-                                '--active-color': opt.color,
-                                '--active-bg': `${opt.color}15`,
-                              }"
-                              @click.stop="showReportQaDatasourcePopover = true; showDatasourcePopover = false"
+                              v-if="!datasourceList.length"
+                              class="flex flex-col items-center justify-center py-10 text-gray-400 gap-2"
+                            >
+                              <div class="i-hugeicons:database-01 text-24 opacity-20"></div>
+                              <span class="text-13">暂无可用数据源</span>
+                            </div>
+                          </div>
+                        </div>
+                      </n-popover>
+
+                      <!-- 深度问数弹窗 -->
+                      <n-popover
+                        v-if="opt.value === 'REPORT_QA'"
+                        v-model:show="showReportQaDatasourcePopover"
+                        trigger="manual"
+                        placement="top"
+                        :show-arrow="false"
+                        class="!p-0"
+                        style="padding: 0;"
+                        @clickoutside="showReportQaDatasourcePopover = false"
+                      >
+                        <template #trigger>
+                          <div
+                            class="mode-icon-btn"
+                            :class="{ active: qa_type === opt.value || showReportQaDatasourcePopover }"
+                            :style="{
+                              '--active-color': opt.color,
+                              '--active-bg': `${opt.color}15`,
+                            }"
+                            @click.stop="showReportQaDatasourcePopover = true; showDatasourcePopover = false"
+                          >
+                            <div
+                              :class="opt.icon"
+                              class="text-14"
+                              :style="{ color: opt.color }"
+                            ></div>
+                            <span class="mode-icon-label">{{ opt.label }}</span>
+                            <div class="i-hugeicons:arrow-down-01 text-12 text-gray-400 ml-1"></div>
+                          </div>
+                        </template>
+                        <div class="flex flex-col min-w-[200px] max-w-[280px] bg-white rounded-xl shadow-2xl border border-gray-100 p-3">
+                          <div class="max-h-[360px] overflow-y-auto custom-scrollbar pr-1">
+                            <div
+                              v-for="ds in datasourceList"
+                              :key="ds.id"
+                              class="group flex items-center gap-2.5 px-3 py-2.5 mb-1.5 last:mb-0 hover:bg-[#F5F3FF] cursor-pointer rounded-lg transition-all duration-200 border border-transparent hover:border-[#DDD6FE]"
+                              :class="{ 'bg-[#F5F3FF] border-[#DDD6FE]': selectedDatasource?.id === ds.id }"
+                              @click="handleDatasourceSelect(ds)"
                             >
                               <div
-                                :class="opt.icon"
-                                class="text-14"
-                                :style="{ color: opt.color }"
-                              ></div>
-                              <span class="mode-icon-label">{{ opt.label }}</span>
-                              <div class="i-hugeicons:arrow-down-01 text-12 text-gray-400 ml-1"></div>
-                            </div>
-                          </template>
-                          <div class="flex flex-col min-w-[200px] max-w-[280px] bg-white rounded-xl shadow-2xl border border-gray-100 p-3">
-                            <div class="max-h-[360px] overflow-y-auto custom-scrollbar pr-1">
-                              <div
-                                v-for="ds in datasourceList"
-                                :key="ds.id"
-                                class="group flex items-center gap-2.5 px-3 py-2.5 mb-1.5 last:mb-0 hover:bg-[#F5F3FF] cursor-pointer rounded-lg transition-all duration-200 border border-transparent hover:border-[#DDD6FE]"
-                                :class="{ 'bg-[#F5F3FF] border-[#DDD6FE]': selectedDatasource?.id === ds.id }"
-                                @click="handleDatasourceSelect(ds)"
+                                class="flex-shrink-0 w-7 h-7 rounded-lg bg-gray-50 flex items-center justify-center group-hover:bg-white transition-colors"
+                                :class="{ 'bg-white': selectedDatasource?.id === ds.id }"
                               >
                                 <div
-                                  class="flex-shrink-0 w-7 h-7 rounded-lg bg-gray-50 flex items-center justify-center group-hover:bg-white transition-colors"
-                                  :class="{ 'bg-white': selectedDatasource?.id === ds.id }"
-                                >
-                                  <div class="i-hugeicons:database-01 text-15 text-gray-400 group-hover:text-[#7E6BF2]" :class="{ 'text-[#7E6BF2]': selectedDatasource?.id === ds.id }"></div>
-                                </div>
-                                <span class="text-14 text-gray-700 font-medium group-hover:text-[#7E6BF2] truncate flex-1 min-w-0" :class="{ 'text-[#7E6BF2]': selectedDatasource?.id === ds.id }" :title="`${ds.name}-${ds.type || 'Datasource'}`">
-                                  {{ ds.name }}-{{ ds.type || 'Datasource' }}
-                                </span>
-                                <div v-if="selectedDatasource?.id === ds.id" class="flex-shrink-0">
-                                  <div class="i-hugeicons:tick-02 text-15 text-[#7E6BF2]"></div>
-                                </div>
+                                  class="i-hugeicons:database-01 text-15 text-gray-400 group-hover:text-[#7E6BF2]"
+                                  :class="{ 'text-[#7E6BF2]': selectedDatasource?.id === ds.id }"
+                                ></div>
                               </div>
-
-                              <div v-if="!datasourceList.length" class="flex flex-col items-center justify-center py-10 text-gray-400 gap-2">
-                                <div class="i-hugeicons:database-01 text-24 opacity-20"></div>
-                                <span class="text-13">暂无可用数据源</span>
+                              <span
+                                class="text-14 text-gray-700 font-medium group-hover:text-[#7E6BF2] truncate flex-1 min-w-0"
+                                :class="{ 'text-[#7E6BF2]': selectedDatasource?.id === ds.id }"
+                                :title="`${ds.name}-${ds.type || 'Datasource'}`"
+                              >
+                                {{ ds.name }}-{{ ds.type || 'Datasource' }}
+                              </span>
+                              <div
+                                v-if="selectedDatasource?.id === ds.id"
+                                class="flex-shrink-0"
+                              >
+                                <div class="i-hugeicons:tick-02 text-15 text-[#7E6BF2]"></div>
                               </div>
                             </div>
+
+                            <div
+                              v-if="!datasourceList.length"
+                              class="flex flex-col items-center justify-center py-10 text-gray-400 gap-2"
+                            >
+                              <div class="i-hugeicons:database-01 text-24 opacity-20"></div>
+                              <span class="text-13">暂无可用数据源</span>
+                            </div>
                           </div>
-                        </n-popover>
+                        </div>
+                      </n-popover>
 
                       <n-tooltip
                         v-if="opt.value !== 'DATABASE_QA' && opt.value !== 'REPORT_QA'"
@@ -2421,9 +2697,12 @@ const handleHistoryClick = async (item: any) => {
                   </n-dropdown>
 
                   <!-- Send Button (Purple Circle) -->
-                  <div
+                  <button
+                    type="button"
                     class="send-btn-circle"
-                    :class="{ disabled: !inputTextString && !pendingUploadFileInfoList?.length }"
+                    :class="{ disabled: !inputTextString && !pendingUploadFileInfoList?.length && !stylizingLoading }"
+                    :disabled="!inputTextString && !pendingUploadFileInfoList?.length && !stylizingLoading"
+                    aria-label="发送"
                     @click="handleCreateStylized()"
                   >
                     <div
@@ -2434,7 +2713,7 @@ const handleHistoryClick = async (item: any) => {
                       v-else
                       class="i-hugeicons:arrow-up-01 text-white text-20 font-bold"
                     ></div>
-                  </div>
+                  </button>
                 </div>
               </div>
             </div>
@@ -2454,18 +2733,19 @@ const handleHistoryClick = async (item: any) => {
 
 <style lang="scss" scoped>
 @use "sass:color";
+
 // ============================================
 // 设计系统变量 - 与 default-page.vue 保持一致
 // ============================================
-$font-family-base: "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-$font-family-display: "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
+$font-family-base: "Inter", "SF Pro Display", -apple-system, blinkmacsystemfont, "Segoe UI", roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+$font-family-display: "Inter", "SF Pro Display", -apple-system, blinkmacsystemfont, sans-serif;
 
 // 主题色系
 $primary-color: #6366f1;
 $primary-light: #818cf8;
 $primary-dark: #4f46e5;
-$primary-bg: rgba(99, 102, 241, 0.08);
-$primary-border: rgba(99, 102, 241, 0.2);
+$primary-bg: rgb(99 102 241 / 8%);
+$primary-border: rgb(99 102 241 / 20%);
 
 // 中性色
 $text-primary: #1e293b;
@@ -2483,28 +2763,34 @@ $radius-xl: 20px;
 $radius-full: 9999px;
 
 // 阴影
-$shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-$shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-$shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+$shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 5%);
+$shadow-md: 0 4px 6px -1px rgb(0 0 0 / 10%), 0 2px 4px -2px rgb(0 0 0 / 10%);
+$shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 10%), 0 4px 6px -4px rgb(0 0 0 / 10%);
 
 // ============================================
 // 侧边栏样式
 // ============================================
+
 .qianwen-sidebar {
   background-color: $bg-sidebar;
+
   // border-right: 0.1px solid rgba(0, 0, 0, 0.06) !important;
+
   font-family: $font-family-base;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
   // Firefox 滚动条样式（置于嵌套规则之前，避免 mixed-decls 警告）
+
   scrollbar-width: thin;
-  scrollbar-color: rgba(138, 138, 138, 0.2) transparent;
+  scrollbar-color: rgb(138 138 138 / 20%) transparent;
 
   * {
     font-family: $font-family-base;
   }
 
   // 滚动条样式
+
   &::-webkit-scrollbar {
     width: 4px;
   }
@@ -2514,12 +2800,12 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(138, 138, 138, 0.2);
+    background: rgb(138 138 138 / 20%);
     border-radius: 2px;
     transition: background 0.2s ease;
 
     &:hover {
-      background: rgba(138, 138, 138, 0.4);
+      background: rgb(138 138 138 / 40%);
     }
   }
 }
@@ -2550,7 +2836,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+  text-rendering: optimizelegibility;
   border-radius: $radius-md;
 
   * {
@@ -2581,7 +2867,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+  text-rendering: optimizelegibility;
 }
 
 .model-name {
@@ -2595,6 +2881,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 模型下拉框
 // ============================================
+
 .model-dropdown-trigger {
   display: inline-flex;
   align-items: center;
@@ -2639,6 +2926,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 对话内容区域
 // ============================================
+
 .conversation-item {
   font-family: $font-family-base;
   -webkit-font-smoothing: antialiased;
@@ -2652,6 +2940,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 滚动条样式
 // ============================================
+
 .custom-scrollbar {
   overflow-y: auto;
 
@@ -2679,6 +2968,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
 
 // 历史记录列表滚动条 - hover 显示
+
 .custom-scrollbar.history-list-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -2714,12 +3004,14 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 顶部头部
 // ============================================
+
 .top-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
   background-color: #fff;
+
   // border-bottom: 1px solid rgba($border-color, 0.5);
 }
 
@@ -2751,8 +3043,9 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 底部输入区域
 // ============================================
+
 .bottom-input-container {
-  padding: 12px 0 6px 0;
+  padding: 12px 0 6px;
   background-color: transparent;
   display: flex;
   flex-direction: column;
@@ -2783,6 +3076,31 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   width: 100%;
   margin: 0;
   padding: 0;
+}
+
+.selected-skills-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 2px 0;
+}
+
+.skill-pill-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 14px;
+  background: #f0edff;
+  color: #7e6bf2;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: #e8e3ff;
+  }
 }
 
 .mode-pill {
@@ -2919,6 +3237,9 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 4px 12px rgba($primary-color, 0.35);
+  border: none;
+  padding: 0;
+  outline: none;
 
   .text-20, .text-18 {
     font-size: 18px;
@@ -2995,6 +3316,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 主滚动容器
 // ============================================
+
 .scrollable-container {
   overflow-y: auto;
   height: 100%;
@@ -3003,14 +3325,15 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   font-family: $font-family-base;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+  text-rendering: optimizelegibility;
 
-  *:not(code):not(pre):not(kbd):not(samp) {
+  *:not(code, pre, kbd, samp) {
     font-family: $font-family-base;
   }
 }
 
 // 全局滚动条样式
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -3032,7 +3355,9 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 自定义表格
 // ============================================
+
 :deep(.custom-table) {
+
   .n-data-table-thead {
     display: none;
   }
@@ -3072,6 +3397,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 页面布局
 // ============================================
+
 .default-page {
   display: flex;
   justify-content: center;
@@ -3102,7 +3428,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   font-family: $font-family-base;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+  text-rendering: optimizelegibility;
 }
 
 .footer {
@@ -3112,6 +3438,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 动画
 // ============================================
+
 .list-move,
 .list-enter-active,
 .list-leave-active {
@@ -3162,6 +3489,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 图标按钮
 // ============================================
+
 .icon-button {
   display: flex;
   align-items: center;
@@ -3185,6 +3513,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 表格容器滚动条
 // ============================================
+
 .scrollable-table-container {
   overflow-y: hidden;
   height: 100%;
@@ -3216,6 +3545,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 滚动到底部按钮
 // ============================================
+
 .scroll-to-bottom-btn {
   position: absolute;
   bottom: 145px;
@@ -3238,7 +3568,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   &:hover {
     background-color: $bg-subtle;
     transform: translateX(-50%) scale(1.1);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 15%);
     border-color: $primary-light;
   }
 
@@ -3255,15 +3585,18 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
 
 @keyframes pulse {
+
   0% {
     transform: scale(0.5);
     opacity: 0;
   }
+
   50% {
     transform: scale(1);
     opacity: 0.15;
     background: $primary-bg;
   }
+
   100% {
     transform: scale(1.5);
     opacity: 0;
@@ -3273,6 +3606,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 文件上传列表
 // ============================================
+
 .upload-wrapper-list {
   --at-apply: flex flex-wrap gap-10 items-center;
   --at-apply: pb-12;
@@ -3281,6 +3615,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 搜索输入框
 // ============================================
+
 .search-input-custom {
   --n-border: 1px solid #{$border-color} !important;
   --n-border-hover: 1px solid #{$primary-light} !important;
@@ -3302,6 +3637,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 加载指示器
 // ============================================
+
 .conversation-loading-indicator {
   animation: fadeIn 0.2s ease-in;
   will-change: opacity;
@@ -3314,13 +3650,13 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   left: 0;
   width: 100%;
   justify-content: center;
-  background: linear-gradient(to top, #fff 80%, rgba(255, 255, 255, 0));
+  background: linear-gradient(to top, #fff 80%, rgb(255 255 255 / 0%));
 }
 
 .conversation-loading-indicator--top {
   width: 100%;
   justify-content: center;
-  background: linear-gradient(to bottom, #fff 80%, rgba(255, 255, 255, 0));
+  background: linear-gradient(to bottom, #fff 80%, rgb(255 255 255 / 0%));
 }
 
 @keyframes fadeIn {
@@ -3331,6 +3667,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 星星加载动画
 // ============================================
+
 .star-spinner {
   display: inline-flex;
   align-items: center;
@@ -3378,6 +3715,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 步骤进度
 // ============================================
+
 .step-progress-text {
   color: $primary-light;
   font-family: $font-family-base;
@@ -3412,6 +3750,7 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 // ============================================
 // 底部等待动画
 // ============================================
+
 .bottom-loading-indicator {
   width: 100%;
   min-height: auto;

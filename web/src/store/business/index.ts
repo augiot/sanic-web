@@ -13,6 +13,7 @@ export interface BusinessState {
     file_size: string
   }[]
   suggestedDisabled: boolean
+  selectedSkills: string[]
 }
 
 export const useBusinessStore = defineStore('business-store', {
@@ -29,6 +30,8 @@ export const useBusinessStore = defineStore('business-store', {
       record_id: null,
       // 全局推荐问题禁用状态
       suggestedDisabled: false,
+      // 智能问答选中的技能
+      selectedSkills: [],
     }
   },
   actions: {
@@ -98,6 +101,7 @@ export const useBusinessStore = defineStore('business-store', {
         const file_list = data.file_list
         const qa_type = data.qa_type || this.qa_type
         const datasource_id = data.datasource_id
+        const selected_skills = data.selected_skills
         const processResponse = async (res) => {
           if (res.status === 401) {
             // 登录失效
@@ -190,6 +194,18 @@ export const useBusinessStore = defineStore('business-store', {
                             )
                           }
                           break
+                        case 't15':
+                          // Agent 请求用户输入
+                          if (jsonChunk.data && jsonChunk.data.type === 'user_input_required') {
+                            controller.enqueue(
+                              JSON.stringify({
+                                type: 'user_input_required',
+                                question: jsonChunk.data.question,
+                                threadId: jsonChunk.data.thread_id,
+                              }),
+                            )
+                          }
+                          break
                         case 't99':
                           // 流结束标记，通知下游关闭
                           controller.enqueue(
@@ -232,7 +248,7 @@ export const useBusinessStore = defineStore('business-store', {
         }
 
         // 调用后端接口拿大模型结果
-        GlobalAPI.createOllama3Stylized(query_str, qa_type, uuid, chat_id, file_list, datasource_id)
+        GlobalAPI.createOllama3Stylized(query_str, qa_type, uuid, chat_id, file_list, datasource_id, selected_skills)
           .then(async (res) => resolve(await processResponse(res)))
           .catch((err) => {
             console.error('Request failed:', err)

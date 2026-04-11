@@ -1,9 +1,11 @@
 <script lang="ts" setup>
 import type { UploadFileInfo } from 'naive-ui'
+import type { InputInst } from 'naive-ui'
 import { computed, onMounted, ref } from 'vue'
 import { fetch_datasource_list } from '@/api/datasource'
 import { fetch_model_list, set_default_model } from '@/api/aimodel'
-import { fetch_skill_list } from '@/api/skill'
+import SkillCommandPopup from '@/components/SkillCommandPopup.vue'
+import { useSlashCommand } from '@/hooks/useSlashCommand'
 import FileUploadManager from '@/views/file/file-upload-manager.vue'
 
 const props = defineProps<{
@@ -13,14 +15,29 @@ const props = defineProps<{
 const emit = defineEmits(['submit'])
 
 const inputValue = ref('')
+const inputRef = ref<InputInst | null>(null)
 const selectedMode = ref<{ label: string, value: string, icon: string, color: string } | null>(null)
 const datasourceList = ref<any[]>([])
 const selectedDatasource = ref<any>(null)
 const showDatasourcePopover = ref(false)
 const showReportQaDatasourcePopover = ref(false)
-const showSkillModal = ref(false)
-const skillList = ref<Array<{ name: string; description: string }>>([])
-const loadingSkills = ref(false)
+
+// 斜杠命令 - 技能选择（仅在智能问答或未选择模式时可用）
+const slashCmd = useSlashCommand(inputRef, inputValue, computed(() => !selectedMode.value || selectedMode.value.value === 'COMMON_QA'))
+
+// 输入框键盘事件拦截（斜杠命令优先）
+const onInputKeydown = (e: KeyboardEvent) => {
+  if (slashCmd.handleKeydown(e)) {
+    e.preventDefault()
+    e.stopPropagation()
+    return
+  }
+  // 原有 Enter 发送逻辑
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    handleEnter()
+  }
+}
 
 // LLM 模型列表（下拉选择）
 const llmModels = ref<any[]>([])
@@ -90,7 +107,6 @@ onMounted(async () => {
     console.error(e)
   }
 
-  // 加载大语言模型列表（用于顶部下拉选择）
   await loadLLMModels()
 })
 
@@ -200,20 +216,13 @@ const handleEnter = (e?: KeyboardEvent) => {
 
   emit('submit', {
     text: inputValue.value,
-    mode: selectedMode.value?.value || 'COMMON_QA', // Default to Smart QA if nothing selected
+    mode: selectedMode.value?.value || 'COMMON_QA',
     datasource_id: selectedDatasource.value?.id,
+    selected_skills: (!selectedMode || selectedMode.value?.value === 'COMMON_QA') && slashCmd.selectedSkills.value.length > 0 ? [...slashCmd.selectedSkills.value] : undefined,
   })
-  // We don't clear inputValue here immediately because parent might handle it,
-  // but typically we should.
-  // However, pendingUploadFileInfoList should probably be cleared by parent or here?
-  // Let's clear them here to reset state for next time if we stay on this page (unlikely)
   inputValue.value = ''
   pendingUploadFileInfoList.value = []
-  // Clear datasource selection if needed, or keep it?
-  // Requirement says "Input box shows selected datasource", so maybe keep it until cleared.
-  // But typically submit resets the input area.
-  // Let's reset it for now as we are likely navigating away or resetting the view.
-  // selectedDatasource.value = null
+  slashCmd.clearSelectedSkills()
 }
 
 const chips = [
@@ -258,44 +267,6 @@ const clearMode = () => {
   // 关闭所有数据源弹窗
   showDatasourcePopover.value = false
   showReportQaDatasourcePopover.value = false
-}
-
-const loadSkills = async () => {
-  if (loadingSkills.value) return
-  loadingSkills.value = true
-  try {
-    const res = await fetch_skill_list()
-    const data = await res.json()
-
-    if (res.ok && data.code === 200) {
-      // 装饰器已经包装了响应，data.data 就是技能数组
-      if (Array.isArray(data.data)) {
-        skillList.value = data.data
-      } else {
-        skillList.value = []
-      }
-    } else {
-      window.$ModalMessage?.error?.(data.msg || '加载技能列表失败')
-      skillList.value = []
-    }
-  } catch (e) {
-    window.$ModalMessage?.error?.('加载技能列表失败')
-    skillList.value = []
-  } finally {
-    loadingSkills.value = false
-  }
-}
-
-const handleSkillDotClick = () => {
-  if (!showSkillModal.value) {
-    // 打开弹框时加载数据
-    if (skillList.value.length === 0) {
-      loadSkills()
-    }
-    showSkillModal.value = true
-  } else {
-    showSkillModal.value = false
-  }
 }
 
 const bottomIcons = [
@@ -393,15 +364,47 @@ const bottomIcons = [
         </div>
 
         <!-- Middle: Input -->
-        <div class="input-wrapper w-full">
+        <div
+          class="input-wrapper w-full"
+          style="position: relative;"
+        >
+          <!-- 技能选择浮层 -->
+          <SkillCommandPopup
+            v-if="!selectedMode || selectedMode?.value === 'COMMON_QA'"
+            :visible="slashCmd.showPopup.value"
+            :skills="slashCmd.filteredSkills.value"
+            :filter-text="slashCmd.filterText.value"
+            :highlight-index="slashCmd.highlightIndex.value"
+            @select="slashCmd.selectSkill"
+            @close="slashCmd.closePopup"
+          />
           <n-input
+            ref="inputRef"
             v-model:value="inputValue"
             type="textarea"
             :placeholder="placeholderText"
             :autosize="{ minRows: 3, maxRows: 8 }"
             class="custom-input"
-            @keydown.enter.prevent="handleEnter"
+            @keydown="onInputKeydown"
           />
+          <!-- 已选技能 pills -->
+          <div
+            v-if="(!selectedMode || selectedMode?.value === 'COMMON_QA') && slashCmd.selectedSkills.value.length > 0"
+            class="selected-skills-bar"
+          >
+            <div
+              v-for="skill in slashCmd.selectedSkills.value"
+              :key="skill"
+              class="skill-pill-tag"
+            >
+              <div class="i-hugeicons:magic-wand-01 text-12"></div>
+              <span>{{ skill }}</span>
+              <div
+                class="i-hugeicons:cancel-01 text-12 cursor-pointer opacity-60 hover:opacity-100"
+                @click="slashCmd.removeSkill(skill)"
+              ></div>
+            </div>
+          </div>
         </div>
 
         <!-- Bottom: Footer Actions -->
@@ -434,68 +437,6 @@ const bottomIcons = [
                   @click.stop="clearMode"
                 ></div>
               </div>
-              <!-- 深度问数模式显示技能小点 - 独立显示在右侧 -->
-              <n-popover
-                v-if="selectedMode.value === 'REPORT_QA'"
-                trigger="manual"
-                v-model:show="showSkillModal"
-                placement="bottom-start"
-                :show-arrow="true"
-                style="padding: 0; max-width: 320px;"
-                @clickoutside="showSkillModal = false"
-              >
-                <template #trigger>
-                  <div
-                    class="skill-dot-wrapper"
-                    :style="{ color: selectedMode.color }"
-                    @click.stop="handleSkillDotClick"
-                  >
-                    <div class="skill-dot"></div>
-                  </div>
-                </template>
-                <div class="skill-popover-content">
-                  <div class="skill-popover-header">
-                    <div class="skill-popover-title">
-                      <div class="i-hugeicons:magic-wand-01 text-18 mr-2" style="color: #8b5cf6;"></div>
-                      <span class="font-semibold">可用技能</span>
-                    </div>
-                  </div>
-                  <div class="skill-list-container">
-                    <div
-                      v-if="loadingSkills"
-                      class="flex items-center justify-center py-8"
-                    >
-                      <n-spin size="small" />
-                      <span class="ml-2 text-gray-500">加载中...</span>
-                    </div>
-                    <div
-                      v-else-if="skillList.length === 0"
-                      class="flex flex-col items-center justify-center py-8 text-gray-400"
-                    >
-                      <div class="i-hugeicons:search-02 text-24 opacity-20 mb-2"></div>
-                      <span class="text-13">暂无可用技能</span>
-                    </div>
-                    <div
-                      v-else
-                      class="skill-list"
-                    >
-                      <div
-                        v-for="skill in skillList"
-                        :key="skill.name"
-                        class="skill-item"
-                      >
-                        <div class="skill-item-header">
-                          <div class="skill-icon i-hugeicons:magic-wand-01 text-16"></div>
-                          <span class="skill-name">{{ skill.name }}</span>
-                        </div>
-                        <div class="skill-description">
-                          {{ skill.description || '暂无描述' }}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </n-popover>
             </template>
 
             <!-- If NO mode selected, show chips row inside -->
@@ -643,13 +584,16 @@ const bottomIcons = [
             </n-dropdown>
 
             <!-- Send Button (Purple Circle) -->
-            <div
+            <button
+              type="button"
               class="send-btn-circle"
               :class="{ disabled: !canSubmit }"
+              :disabled="!canSubmit"
+              aria-label="发送"
               @click="handleEnter()"
             >
               <div class="i-hugeicons:arrow-up-01 text-white text-20 font-bold"></div>
-            </div>
+            </button>
           </div>
         </div>
       </div>
@@ -866,6 +810,31 @@ $shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
   margin: 8px 0;
 }
 
+.selected-skills-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 2px 0;
+}
+
+.skill-pill-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 14px;
+  background: #f0edff;
+  color: #7e6bf2;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: #e8e3ff;
+  }
+}
+
 .custom-input {
   --n-border: none !important;
   --n-border-hover: none !important;
@@ -1006,6 +975,9 @@ $shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 4px 12px rgba($primary-color, 0.35);
+  border: none;
+  padding: 0;
+  outline: none;
 
   .text-20 {
     font-size: 18px;
@@ -1081,139 +1053,5 @@ $shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
       background: color.adjust($border-color, $lightness: -10%);
     }
   }
-}
-
-// ============================================
-// 技能相关样式
-// ============================================
-.skill-dot-wrapper {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border-radius: 50%;
-  background-color: transparent;
-
-  &:hover {
-    background-color: rgba(139, 92, 246, 0.1);
-    transform: scale(1.1);
-  }
-}
-
-.skill-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: currentColor;
-  display: block;
-  transition: all 0.2s ease;
-  box-shadow: 0 0 4px currentColor;
-}
-
-.skill-popover-content {
-  background: white;
-  border-radius: $radius-lg;
-  overflow: hidden;
-  box-shadow: $shadow-xl;
-  width: 100%;
-  max-width: 320px;
-}
-
-.skill-popover-header {
-  padding: 12px 16px;
-  border-bottom: 1px solid $border-color;
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(139, 92, 246, 0.02) 100%);
-  flex-shrink: 0;
-}
-
-.skill-popover-title {
-  display: flex;
-  align-items: center;
-  font-size: 14px;
-  color: $text-primary;
-  font-family: $font-family-base;
-}
-
-.skill-list-container {
-  max-height: 360px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 10px 12px;
-  background: white;
-  -webkit-overflow-scrolling: touch;
-
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: $border-color;
-    border-radius: 3px;
-
-    &:hover {
-      background: color.adjust($border-color, $lightness: -10%);
-    }
-  }
-}
-
-.skill-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.skill-item {
-  padding: 12px 14px;
-  border-radius: $radius-md;
-  border: 1px solid $border-color;
-  background-color: $bg-subtle;
-  transition: all 0.2s ease;
-  cursor: default;
-  flex-shrink: 0;
-
-  &:hover {
-    border-color: rgba(139, 92, 246, 0.3);
-    background-color: rgba(139, 92, 246, 0.05);
-    transform: translateY(-1px);
-    box-shadow: $shadow-sm;
-  }
-}
-
-.skill-item-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.skill-icon {
-  color: $info-color;
-  flex-shrink: 0;
-  font-size: 14px;
-}
-
-.skill-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: $text-primary;
-  font-family: $font-family-base;
-  text-transform: capitalize;
-  word-break: break-word;
-}
-
-.skill-description {
-  font-size: 12px;
-  color: $text-secondary;
-  line-height: 1.5;
-  margin-left: 22px;
-  font-family: $font-family-base;
-  word-break: break-word;
 }
 </style>
