@@ -85,3 +85,4 @@ agent/common
 !/tests/
 
 graphify-out/
+models/*
