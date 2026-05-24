@@ -1,10 +1,10 @@
 {
   "name": "@apconw/aix-db-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI for Aix-DB data Q&A",
   "type": "module",
   "bin": {
-    "aix-db-cli": "./bin/aix-db-cli.js"
+    "aix-db-cli": "bin/aix-db-cli.js"
   },
   "files": [
     "bin/",
