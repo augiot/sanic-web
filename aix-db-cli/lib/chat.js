@@ -1,5 +1,6 @@
 import { requireAuth } from './config.js'
 import { streamChat } from './api.js'
+import { renderChartPng, DEFAULT_CHART_DIR } from './chart.js'
 
 export function processEvents(events) {
   let answer = ''
@@ -24,7 +25,7 @@ export function processEvents(events) {
   return { answer, chartMeta, steps }
 }
 
-export async function chatCommand(question, { datasource, qaType, timeout, verbose, stream }) {
+export async function chatCommand(question, { datasource, qaType, timeout, verbose, stream, renderChart = true, chartDir = DEFAULT_CHART_DIR }) {
   const config = requireAuth()
 
   const collectedEvents = []
@@ -92,6 +93,17 @@ export async function chatCommand(question, { datasource, qaType, timeout, verbo
     const cols = Array.isArray(chartMeta.columns) ? chartMeta.columns.length : 0
     const dataRows = Array.isArray(chartMeta.data) ? chartMeta.data.length : 0
     console.log(`\n[图表: ${template} — ${cols} 列 × ${dataRows} 行]`)
+
+    if (renderChart) {
+      try {
+        const chartFile = renderChartPng(chartMeta, chartDir)
+        if (chartFile) {
+          console.log(`图表文件: ${chartFile}`)
+        }
+      } catch (err) {
+        console.error(`图表渲染失败: ${err.message}`)
+      }
+    }
 
     if (Array.isArray(chartMeta.recommended_questions) && chartMeta.recommended_questions.length > 0) {
       console.log('\n推荐问题:')

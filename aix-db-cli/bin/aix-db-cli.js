@@ -3,6 +3,7 @@ import { Command } from 'commander'
 import { loginCommand } from '../lib/auth.js'
 import { datasourcesCommand } from '../lib/datasources.js'
 import { chatCommand } from '../lib/chat.js'
+import { DEFAULT_CHART_DIR } from '../lib/chart.js'
 
 const program = new Command()
 
@@ -47,6 +48,8 @@ program
   .option('--timeout <seconds>', '超时时间（秒）', '180')
   .option('--verbose', '显示执行步骤', false)
   .option('--stream', '流式输出（逐字打印）', false)
+  .option('--no-render-chart', '不渲染图表文件')
+  .option('--chart-dir <dir>', '图表输出目录', DEFAULT_CHART_DIR)
   .action(async (question, opts) => {
     try {
       await chatCommand(question, opts)
