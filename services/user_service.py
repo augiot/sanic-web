@@ -121,7 +121,7 @@ async def generate_jwt_token(user_id, username, role="user"):
         "id": str(user_id),
         "username": username,
         "role": role,
-        "exp": datetime.utcnow() + timedelta(hours=24),
+        "exp": datetime.utcnow() + timedelta(days=7),
     }  # Token 过期时间
     token = jwt.encode(payload, os.getenv("JWT_SECRET_KEY", "550e8400-e29b-41d4-a716-446655440000"), algorithm="HS256")
     return token
