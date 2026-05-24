@@ -209,6 +209,29 @@ npm run dev
 ```
 
 
+## 命令行工具（CLI）
+
+[![npm version](https://img.shields.io/npm/v/@apconw/aix-db-cli)](https://www.npmjs.com/package/@apconw/aix-db-cli)
+
+通过终端直接发起自然语言数据查询，支持图表渲染输出。
+
+```bash
+# 安装
+npm install -g @apconw/aix-db-cli
+
+# 登录（浏览器完成认证，token 有效期 7 天）
+aix-db-cli login
+
+# 查看可用数据源
+aix-db-cli datasources
+
+# 数据问答
+aix-db-cli chat "有哪些数据表？" --datasource 48
+aix-db-cli chat "查询销售额趋势" --datasource 48 --stream
+```
+
+详细文档见 [aix-db-cli/README.md](./aix-db-cli/README.md)。
+
 ## 技术栈
 
 **后端**：Sanic · SQLAlchemy · LangChain/LangGraph · Neo4j · FAISS/Chroma · MinIO
