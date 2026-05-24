@@ -92,7 +92,12 @@ export async function loginCommand(baseUrl) {
 
       if (req.method === 'POST' && req.url === '/do-login') {
         let body = ''
-        req.on('data', chunk => { body += chunk })
+        req.on('data', chunk => {
+          body += chunk
+          if (body.length > 10 * 1024) {
+            req.destroy()
+          }
+        })
         req.on('end', async () => {
           try {
             const { username, password } = JSON.parse(body)

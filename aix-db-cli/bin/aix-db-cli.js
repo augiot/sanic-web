@@ -31,7 +31,12 @@ program
   .option('--type <type>', '按类型过滤 (mysql, ck, starrocks, pg...)')
   .option('--name <name>', '按名称模糊过滤')
   .action(async (opts) => {
-    await datasourcesCommand(opts)
+    try {
+      await datasourcesCommand(opts)
+    } catch (err) {
+      console.error(`Error: ${err.message}`)
+      process.exit(1)
+    }
   })
 
 program
@@ -43,7 +48,12 @@ program
   .option('--verbose', '显示执行步骤', false)
   .option('--stream', '流式输出（逐字打印）', false)
   .action(async (question, opts) => {
-    await chatCommand(question, opts)
+    try {
+      await chatCommand(question, opts)
+    } catch (err) {
+      console.error(`Error: ${err.message}`)
+      process.exit(1)
+    }
   })
 
 program.parse()
