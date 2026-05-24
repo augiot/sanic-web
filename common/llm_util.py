@@ -12,12 +12,13 @@ pool = get_db_pool()
 DEFAULT_LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", 30 * 60))
 
 
-def get_llm(temperature=0.75, timeout=None, max_tokens=None):
+def get_llm(temperature=0.75, timeout=None, max_tokens=None, thinking=False):
     """
     获取LLM模型
     :param temperature: 温度参数
     :param timeout: 超时时间（秒），默认使用环境变量 LLM_TIMEOUT 或 30分钟
     :param max_tokens: 单次输出 token 上限，默认 None（使用模型默认值）
+    :param thinking: 是否开启思考模式（仅 OpenAI 协议支持，如 DeepSeek-R1），默认 False
     :return: LLM模型实例
     """
     with pool.get_session() as session:
@@ -69,7 +70,6 @@ def get_llm(temperature=0.75, timeout=None, max_tokens=None):
             try:
                 from langchain_openai import ChatOpenAI
             except Exception as e:
-                # 这里打印日志而不是在导入阶段崩溃
                 print(
                     f"[ERROR] Failed to import ChatOpenAI, please check langchain-openai/langsmith/opentelemetry installation: {e}"
                 )
@@ -80,11 +80,64 @@ def get_llm(temperature=0.75, timeout=None, max_tokens=None):
                 temperature=temperature,
                 base_url=model_base_url,
                 api_key=model_api_key or "empty",  # Ensure not None
-                timeout=timeout,  # 设置超时时间（秒）
+                timeout=timeout,
             )
             if max_tokens is not None:
                 kwargs["max_tokens"] = max_tokens
-            return ChatOpenAI(**kwargs)
+            if thinking:
+                kwargs["model_kwargs"] = {"extra_body": {"thinking": {"type": "enabled"}}}
+
+            # LangChain silently drops reasoning_content at two points:
+            # 1. _convert_chunk_to_generation_chunk never reads delta.reasoning_content
+            # 2. _get_request_payload/_convert_message_to_dict never writes it back
+            # This subclass fixes both ends so DeepSeek multi-turn conversations work.
+            class _DeepSeekCompatChatOpenAI(ChatOpenAI):
+                def _convert_chunk_to_generation_chunk(
+                    self, chunk, default_chunk_class, base_generation_info
+                ):
+                    from langchain_core.messages import AIMessageChunk as _AIMessageChunk
+
+                    gen = super()._convert_chunk_to_generation_chunk(
+                        chunk, default_chunk_class, base_generation_info
+                    )
+                    if gen is None:
+                        return None
+                    choices = chunk.get("choices") or chunk.get("chunk", {}).get("choices", [])
+                    if choices:
+                        delta = choices[0].get("delta") or {}
+                        reasoning = delta.get("reasoning_content")
+                        if reasoning and isinstance(gen.message, _AIMessageChunk):
+                            gen.message.additional_kwargs["reasoning_content"] = (
+                                gen.message.additional_kwargs.get("reasoning_content", "")
+                                + reasoning
+                            )
+                    return gen
+
+                def _create_chat_result(self, response, generation_info=None):
+                    result = super()._create_chat_result(response, generation_info)
+                    resp = response if isinstance(response, dict) else response.model_dump()
+                    choices = resp.get("choices") or []
+                    if choices and result.generations:
+                        reasoning = (choices[0].get("message") or {}).get("reasoning_content")
+                        if reasoning:
+                            result.generations[0].message.additional_kwargs[
+                                "reasoning_content"
+                            ] = reasoning
+                    return result
+
+                def _get_request_payload(self, input_, *, stop=None, **kwargs):
+                    from langchain_core.messages import AIMessage as _AIMessage
+
+                    payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+                    messages = self._convert_input(input_).to_messages()
+                    for msg, msg_dict in zip(messages, payload.get("messages", [])):
+                        if isinstance(msg, _AIMessage) and msg_dict.get("role") == "assistant":
+                            reasoning = (msg.additional_kwargs or {}).get("reasoning_content")
+                            if reasoning:
+                                msg_dict["reasoning_content"] = reasoning
+                    return payload
+
+            return _DeepSeekCompatChatOpenAI(**kwargs)
 
         def _get_ollama():
             """
