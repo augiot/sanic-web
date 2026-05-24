@@ -4,6 +4,9 @@ Aix-DB 数据问答命令行工具。通过浏览器登录后，直接在终端�
 
 [![npm version](https://img.shields.io/npm/v/@apconw/aix-db-cli)](https://www.npmjs.com/package/@apconw/aix-db-cli)
 [![Node >=18](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
+[![GitHub stars](https://img.shields.io/github/stars/apconw/Aix-DB?style=social)](https://github.com/apconw/Aix-DB)
+
+> 基于 [Aix-DB](https://github.com/apconw/Aix-DB) 开源项目 —— LLM 驱动的数据分析平台（ChatBI）。如果对你有帮助，欢迎给项目点个 ⭐️
 
 ## 安装
 
@@ -120,3 +123,9 @@ ID     NAME             TYPE         STATUS     HOST                     DATABAS
 
 - Node.js ≥ 18
 - 已部署的 [Aix-DB](https://github.com/apconw/Aix-DB) 服务
+
+## 相关链接
+
+- 🏠 项目主页：[https://github.com/apconw/Aix-DB](https://github.com/apconw/Aix-DB)
+- 📦 npm 包：[https://www.npmjs.com/package/@apconw/aix-db-cli](https://www.npmjs.com/package/@apconw/aix-db-cli)
+- 🐛 问题反馈：[https://github.com/apconw/Aix-DB/issues](https://github.com/apconw/Aix-DB/issues)
