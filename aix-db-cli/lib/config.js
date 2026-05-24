@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 
@@ -21,6 +21,15 @@ export function saveConfig(config) {
 export function isTokenExpired(config) {
   if (!config?.tokenExpiry) return true
   return new Date(config.tokenExpiry) <= new Date()
+}
+
+export function clearConfig() {
+  try {
+    rmSync(CONFIG_PATH, { force: true })
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function requireAuth() {

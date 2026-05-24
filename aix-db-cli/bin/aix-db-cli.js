@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
 import { loginCommand } from '../lib/auth.js'
+import { clearConfig, loadConfig } from '../lib/config.js'
 import { datasourcesCommand } from '../lib/datasources.js'
 import { chatCommand } from '../lib/chat.js'
 import { DEFAULT_CHART_DIR } from '../lib/chart.js'
@@ -24,6 +25,19 @@ program
       console.error(`登录失败: ${err.message}`)
       process.exit(1)
     }
+  })
+
+program
+  .command('logout')
+  .description('清除本地登录状态')
+  .action(() => {
+    const config = loadConfig()
+    if (!config?.token) {
+      console.log('当前未登录')
+      return
+    }
+    clearConfig()
+    console.log('✓ 已退出登录')
   })
 
 program
