@@ -13,12 +13,12 @@ program
 
 program
   .command('login')
-  .description('浏览器登录并保存 token（有效期 24 小时）')
+  .description('浏览器登录并保存 token（有效期 7 天）')
   .option('--url <baseUrl>', '服务地址', 'http://localhost:18080')
   .action(async (opts) => {
     try {
       await loginCommand(opts.url)
-      console.log('✓ 登录成功，token 有效期 24 小时')
+      console.log('✓ 登录成功，token 有效期 7 天')
     } catch (err) {
       console.error(`登录失败: ${err.message}`)
       process.exit(1)

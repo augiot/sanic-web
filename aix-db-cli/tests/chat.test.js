@@ -15,7 +15,7 @@ test('processEvents accumulates t02 continue content', () => {
 
 test('processEvents extracts chart metadata from t04', () => {
   const events = [
-    { dataType: 't04', data: { data: { template_code: 'temp04', columns: ['a', 'b'], data: [[1, 2]], recommended_questions: ['q1'] } } }
+    { dataType: 't04', data: { template_code: 'temp04', columns: ['a', 'b'], data: [[1, 2]], recommended_questions: ['q1'] } }
   ]
   const { chartMeta } = processEvents(events)
   assert.equal(chartMeta.template_code, 'temp04')

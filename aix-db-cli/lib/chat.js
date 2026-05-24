@@ -13,8 +13,8 @@ export function processEvents(events) {
         answer += data.content
       }
     }
-    if (dataType === 't04' && data?.data) {
-      chartMeta = data.data
+    if (dataType === 't04' && data) {
+      chartMeta = data
     }
     if (dataType === 't14') {
       steps.push({ stepName: data?.stepName, status: data?.status })

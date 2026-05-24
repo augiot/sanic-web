@@ -102,7 +102,7 @@ export async function loginCommand(baseUrl) {
           try {
             const { username, password } = JSON.parse(body)
             const token = await loginApi(baseUrl, username, password)
-            const tokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+            const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
             saveConfig({ baseUrl, token, tokenExpiry })
             res.writeHead(200, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ ok: true }))
