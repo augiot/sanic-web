@@ -1,6 +1,9 @@
 # @apconw/aix-db-cli
 
-Aix-DB 数据问答命令行工具。通过浏览器登录后，直接在终端发起数据问答查询。
+Aix-DB 数据问答命令行工具。通过浏览器登录后，直接在终端发起自然语言数据查询，支持图表渲染输出。
+
+[![npm version](https://img.shields.io/npm/v/@apconw/aix-db-cli)](https://www.npmjs.com/package/@apconw/aix-db-cli)
+[![Node >=18](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 
 ## 安装
 
@@ -11,7 +14,7 @@ npm install -g @apconw/aix-db-cli
 ## 快速开始
 
 ```bash
-# 1. 登录（默认服务地址 http://localhost:18080）
+# 1. 登录（浏览器完成认证，token 有效期 7 天）
 aix-db-cli login
 
 # 自定义服务地址
@@ -29,19 +32,26 @@ aix-db-cli chat "有哪些数据表？" --datasource 48
 # 流式输出（逐字打印）
 aix-db-cli chat "查询销售额趋势" --datasource 48 --stream
 
-# 显示执行步骤
+# 显示执行步骤（SQL 生成过程）
 aix-db-cli chat "各表行数统计" --datasource 48 --verbose
+
+# 4. 退出登录
+aix-db-cli logout
 ```
 
 ## 命令
 
 ### `login`
 
-浏览器登录，保存 JWT token（有效期 24 小时）到 `~/.config/aix-db-cli/config.json`。
+打开浏览器完成登录，将 JWT token 保存到本地（有效期 7 天）。
 
 | 选项 | 默认值 | 说明 |
 |------|--------|------|
 | `--url <baseUrl>` | `http://localhost:18080` | Aix-DB 服务地址 |
+
+### `logout`
+
+清除本地登录状态（删除保存的 token）。
 
 ### `datasources`
 
@@ -49,28 +59,64 @@ aix-db-cli chat "各表行数统计" --datasource 48 --verbose
 
 | 选项 | 说明 |
 |------|------|
-| `--type <type>` | 按类型精确过滤（mysql, pg, ck, starrocks...）|
+| `--type <type>` | 按类型精确过滤（mysql, pg, ck, starrocks, oracle...）|
 | `--name <name>` | 按名称模糊过滤 |
+
+**输出示例：**
+
+```
+ID     NAME             TYPE         STATUS     HOST                     DATABASE
+48     mysql            MySQL        Success    host.docker.internal     chat_db
+51     starrocks        StarRocks    Success    10.0.0.1                 analytics
+```
 
 ### `chat <question>`
 
-发起数据问答查询，答案输出到 stdout。
+用自然语言发起数据问答，答案输出到 stdout，图表自动渲染为 PNG 文件。
 
 | 选项 | 默认值 | 说明 |
 |------|--------|------|
-| `--datasource <id>` | 必填 | 数据源 ID |
+| `--datasource <id>` | 必填 | 数据源 ID（见 `datasources` 命令）|
 | `--qa-type <type>` | `DATABASE_QA` | 问答模式 |
 | `--timeout <seconds>` | `180` | 超时时间（秒）|
 | `--verbose` | false | 显示 SQL 生成等执行步骤 |
 | `--stream` | false | 流式逐字输出 |
+| `--no-render-chart` | — | 跳过图表渲染，只显示文字结果 |
+| `--chart-dir <dir>` | `~/.cache/aix-db-cli/charts` | 图表 PNG 输出目录 |
 
-## 发布到 npm
+**输出示例：**
 
-```bash
-cd aix-db-cli
-npm publish --access public
+```
+问题: 统计销售额按分类分组
+数据源: 48
+---
+电子产品销售额 42,681 元，占比 75.3%
+家电 8,240 元，服装 4,727 元
+
+[图表: temp02 — 2 列 × 4 行]
+图表文件: /Users/you/.cache/aix-db-cli/charts/chart-temp02-1748xxx.png
+
+推荐问题:
+  1. 各分类环比增长率如何？
+  2. 哪个分类利润率最高？
 ```
 
-## Token 过期
+## 图表支持
 
-Token 有效期 24 小时。过期后重新运行 `aix-db-cli login` 即可。
+| 模板 | 类型 |
+|------|------|
+| `temp01` | 表格 |
+| `temp02` | 饼图 |
+| `temp03` | 柱状图 |
+| `temp04` | 折线图 |
+
+图表使用 ECharts SSR + Resvg 渲染为 PNG，支持中文字体。
+
+## 配置文件
+
+登录信息保存在 `~/.config/aix-db-cli/config.json`，包含服务地址和 token，有效期 7 天。
+
+## 系统要求
+
+- Node.js ≥ 18
+- 已部署的 [Aix-DB](https://github.com/apconw/Aix-DB) 服务
