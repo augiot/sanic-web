@@ -65,9 +65,9 @@ Aix-DB 基于 **LangChain/LangGraph** 框架，结合 **MCP Skills** 多智能�
 💰 赞助商展示
 ---
 
-| Doloffer                                                                                                                     |
-|------------------------------------------------------------------------------------------------------------------------------|
-| <a href="https://doloffer.com/" target="_blank"><img src="./docs/docs/images/doloffer.png" alt="doloffer" width="320" /></a> |
+| Doloffer                                                                                                                      |
+|-------------------------------------------------------------------------------------------------------------------------------|
+| <a href="https://doloffer.com/" target="_blank"><img src="./docs/docs/images/doloffers.png" alt="doloffer" width="320" /></a> |
 
 
 ## 联系我们
