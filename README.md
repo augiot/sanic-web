@@ -62,6 +62,14 @@ Aix-DB 基于 **LangChain/LangGraph** 框架，结合 **MCP Skills** 多智能�
 </table>
 
 
+💰 赞助商展示
+---
+
+| Doloffer                                                                                                                     |
+|------------------------------------------------------------------------------------------------------------------------------|
+| <a href="https://doloffer.com/" target="_blank"><img src="./docs/docs/images/doloffer.png" alt="doloffer" width="320" /></a> |
+
+
 ## 联系我们
 
 无论是项目部署、技术咨询还是商务合作，欢迎随时扫码添加微信沟通：
@@ -353,20 +361,6 @@ aix-db-cli chat "查询销售额趋势" --datasource 48 --stream
 **前端**：Vue 3 · TypeScript · Vite 5 · Naive UI · ECharts · AntV
 
 **AI 模型**：OpenAI · Anthropic · DeepSeek · Qwen · Ollama
-
-💰 赞助商展示
----
-
-<table align="center">
-  <tr>
-    <td align="center">
-      <a href="https://doloffer.com/" target="_blank">
-        <img src="./docs/docs/images/doloffer.png" alt="doloffer" width="200" />
-      </a>
-    </td>
-  </tr>
-</table>
-
 
 🤝 成为赞助者
 ---
