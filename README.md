@@ -65,9 +65,9 @@ Aix-DB 基于 **LangChain/LangGraph** 框架，结合 **MCP Skills** 多智能�
 💰 赞助商展示
 ---
 
-| Doloffer                                                                                                                      |
-|-------------------------------------------------------------------------------------------------------------------------------|
-| <a href="https://doloffer.com/" target="_blank"><img src="./docs/docs/images/doloffers.png" alt="doloffer" width="320" /></a> |
+| Doloffer                                                                                                                      | IP数据云                                                                                                                                                  |
+|-------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| <a href="https://doloffer.com/" target="_blank"><img src="./docs/docs/images/doloffers.png" alt="doloffer" width="320" /></a> | <a href="http://ipdatacloud.com/" target="_blank"><img src="./docs/docs/images/ip_hub.jpg" alt="IP数据云" width="320" /></a> |
 
 
 ## 联系我们
