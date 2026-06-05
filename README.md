@@ -67,7 +67,7 @@ Aix-DB 基于 **LangChain/LangGraph** 框架，结合 **MCP Skills** 多智能�
 
 | Doloffer                                                                                                                      | IP数据云                                                                                                                                                  |
 |-------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| <a href="https://doloffer.com/" target="_blank"><img src="./docs/docs/images/doloffers.png" alt="doloffer" width="320" /></a> | <a href="http://ipdatacloud.com/" target="_blank"><img src="./docs/docs/images/ip_hub.jpg" alt="IP数据云" width="320" /></a> |
+| <a href="https://doloffer.com/" target="_blank"><img src="./docs/docs/images/doloffers.png" alt="doloffer" width="320" /></a> | <a href="https://app.ipdatacloud.com/check_login/set_cookie_ip66?target_url=https://www.ipdatacloud.com/?utm-source=SQ&utm-keyword=?4897&name=spread_id&value=4897" target="_blank"><img src="./docs/docs/images/ip_hub.jpg" alt="IP数据云" width="320" /></a> |
 
 
 ## 联系我们
@@ -103,7 +103,7 @@ Aix-DB 基于 **LangChain/LangGraph** 框架，结合 **MCP Skills** 多智能�
   <tr>
     <td>
       <ul>
-        <li>我将亲自远程帮您  环境配置与项目部署（OpenClaw&Aix-DB）</li>
+        <li>我将亲自远程帮您  环境配置与项目部署（OpenClaw&Hermes&Aix-DB）</li>
         <li>提供项目 <b>全部资料</b>（源码、文档、配置模板）</li>
         <li><b>专属技术支持群</b>，每日AI咨询 & 飞书文档 & 社群互助</li>
         <li>项目实战：VibeCoding实操 & 数据问答 Skill开发</li>
@@ -166,8 +166,8 @@ Aix-DB 基于 **LangChain/LangGraph** 框架，结合 **MCP Skills** 多智能�
     <td>面向企业数据分析场景，提供 Text2SQL、智能报表、数据可视化等端到端解决方案</td>
   </tr>
   <tr>
-    <td>🤖 <b>OpenClaw 多智能体搭建</b></td>
-    <td>基于 OpenClaw 平台，为企业定制多智能体协作系统，实现复杂业务流程的智能化</td>
+    <td>🤖 <b>OpenClaw&Hermes 多智能体搭建</b></td>
+    <td>基于 OpenClaw&Hermes 平台，为企业定制多智能体协作系统，实现复杂业务流程的智能化</td>
   </tr>
   <tr>
     <td>🎯 <b>特定领域 SKILL 开发</b></td>
