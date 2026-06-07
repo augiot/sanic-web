@@ -274,26 +274,6 @@ const scrollToBottom = async () => {
 
   refWrapperContent.value.scrollTop = refWrapperContent.value.scrollHeight
 }
-const scrollToBottomByThreshold = async () => {
-  if (!refWrapperContent.value) {
-    return
-  }
-
-  const threshold = 100
-  const distanceToBottom
-        = refWrapperContent.value.scrollHeight
-          - refWrapperContent.value.scrollTop
-          - refWrapperContent.value.clientHeight
-  if (distanceToBottom <= threshold) {
-    scrollToBottom()
-  }
-}
-
-// 滚动到底部
-const scrollToBottomIfAtBottom = async () => {
-  scrollToBottomByThreshold()
-}
-
 /**
  * 处理 textBuffer 中的 HTML 报告分隔符
  * 将非 HTML 部分输出到 displayText，HTML 部分输出到 htmlReportContent
@@ -386,9 +366,6 @@ const runReadBuffer = (readCallback = () => {}, endCallback = () => {}) => {
   } else {
     endCallback()
   }
-
-  // 动态渲染时实时调用父组件滚动条至最底端
-  parentScollBottomMethod.value()
 }
 
 const showText = () => {
@@ -452,7 +429,6 @@ const showText = () => {
       },
     )
   }
-  scrollToBottomIfAtBottom()
 }
 
 // 记录上一次的 reader 状态，用于检测 reader 变化
@@ -1180,8 +1156,4 @@ const currentQaOption = computed(() => {
   cursor: default;
   font-weight: 500;
 }
-
 </style>
-
-
-

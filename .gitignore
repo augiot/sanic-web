@@ -11,6 +11,7 @@ agent/common/agent_workspace/*
 tests/
 !tests/
 tests/*
+!tests/test_aimodel_service.py
 !tests/test_sql_security.py
 docker/volume/
 docker/dify/volumes/*

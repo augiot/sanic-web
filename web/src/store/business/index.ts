@@ -102,6 +102,7 @@ export const useBusinessStore = defineStore('business-store', {
         const qa_type = data.qa_type || this.qa_type
         const datasource_id = data.datasource_id
         const selected_skills = data.selected_skills
+        const onStreamCompleted = data.onStreamCompleted
         const processResponse = async (res) => {
           if (res.status === 401) {
             // 登录失效
@@ -207,6 +208,7 @@ export const useBusinessStore = defineStore('business-store', {
                           }
                           break
                         case 't99':
+                          onStreamCompleted?.()
                           // 流结束标记，通知下游关闭
                           controller.enqueue(
                             JSON.stringify({
@@ -225,6 +227,7 @@ export const useBusinessStore = defineStore('business-store', {
                     }
                   },
                   flush: (controller) => {
+                    onStreamCompleted?.()
                     controller.terminate()
                   },
                 }),
