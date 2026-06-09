@@ -248,6 +248,23 @@ const currentChatId = computed(() => {
 
 // 对话等待提示词图标
 const stylizingLoading = ref(false)
+const processingChatIds = ref<Set<string>>(new Set())
+
+const setChatProcessing = (chatId: string | undefined, processing: boolean) => {
+  if (!chatId) {
+    return
+  }
+
+  const nextProcessingChatIds = new Set(processingChatIds.value)
+  if (processing) {
+    nextProcessingChatIds.add(chatId)
+  } else {
+    nextProcessingChatIds.delete(chatId)
+  }
+  processingChatIds.value = nextProcessingChatIds
+}
+
+const isChatProcessing = (chatId: string) => processingChatIds.value.has(chatId)
 
 // 输入字符串
 const inputTextString = ref('')
@@ -269,9 +286,11 @@ const refReaderMarkdownPreview = ref<any>()
 const messagesContainer = ref<HTMLElement | null>(null)
 
 // 读取失败
-const onFailedReader = (index: number) => {
-  if (conversationItems.value[index]) {
-    conversationItems.value[index].reader = null
+const onFailedReader = (index: number, chatId: string) => {
+  setChatProcessing(chatId, false)
+  const item = conversationItems.value[index]
+  if (item?.chat_id === chatId) {
+    item.reader = null
     stylizingLoading.value = false
     // 取消推荐问题按钮和重新对话按钮的禁用状态（请求失败时）
     businessStore.set_suggested_disabled(false)
@@ -287,8 +306,10 @@ const onFailedReader = (index: number) => {
   }
 }
 
-const onCompletedReader = (index: number) => {
-  if (conversationItems.value[index]) {
+const onCompletedReader = (index: number, chatId?: string) => {
+  const resolvedChatId = chatId || conversationItems.value[index]?.chat_id
+  setChatProcessing(resolvedChatId, false)
+  if (conversationItems.value[index]?.chat_id === resolvedChatId) {
     stylizingLoading.value = false
     // 取消推荐问题按钮和重新对话按钮的禁用状态
     businessStore.set_suggested_disabled(false)
@@ -559,11 +580,6 @@ const onStepProgress = (visibleIndex: number, progress: any) => {
           progressId: progress.progressId,
         },
       }
-
-      // 使用 nextTick 确保 DOM 更新
-      nextTick(() => {
-        scrollToBottom()
-      })
     }
     // complete 状态不做任何操作，步骤信息会一直显示直到下一个步骤的 start 来替换
   }
@@ -607,8 +623,6 @@ const onUserInputRequired = (visibleIndex: number, data: any) => {
   // 停止 loading 动画
   stylizingLoading.value = false
   contentLoadingStates.value[visibleIndex] = false
-
-  nextTick(() => scrollToBottom())
 }
 
 // 处理用户提交回答
@@ -844,6 +858,8 @@ const handleCreateStylized = async (
 
   // 调用大模型后台服务接口
   stylizingLoading.value = true
+  const processingChatId = uuids.value[currentQaType]
+  setChatProcessing(processingChatId, true)
   const textContent = inputTextString.value
     ? inputTextString.value
     : send_text
@@ -902,10 +918,12 @@ const handleCreateStylized = async (
         qa_type: currentQaType, // Pass qa_type explicitly
         datasource_id: selectedDatasource.value?.id,
         selected_skills: currentSelectedSkills.length > 0 ? currentSelectedSkills : undefined,
+        onStreamCompleted: () => setChatProcessing(processingChatId, false),
       },
     )
 
   if (needLogin) {
+    setChatProcessing(processingChatId, false)
     message.error('登录已失效，请重新登录')
 
     // 清空文件上传列表
@@ -920,6 +938,7 @@ const handleCreateStylized = async (
 
   // 处理权限被拒绝的情况
   if (permissionDenied) {
+    setChatProcessing(processingChatId, false)
     // 显示权限错误消息提醒
     message.warning(errorMessage || '您没有访问该数据源的权限，请联系管理员授权。')
 
@@ -939,6 +958,7 @@ const handleCreateStylized = async (
   }
 
   if (error) {
+    setChatProcessing(processingChatId, false)
     stylizingLoading.value = false
     onCompletedReader(conversationItems.value.length - 1)
 
@@ -1948,6 +1968,11 @@ const handleHistoryClick = async (item: any) => {
                 @click="handleHistoryClick(item)"
               >
                 <div class="flex items-center gap-2 overflow-hidden w-full">
+                  <span
+                    v-if="isChatProcessing(item.chat_id)"
+                    class="history-processing-spinner shrink-0"
+                    aria-label="对话处理中"
+                  ></span>
                   <div class="truncate text-[14px] w-full leading-[1.45] ml-10 mt-10 history-item-text">
                     {{ item.key || '无标题对话' }}
                   </div>
@@ -2264,8 +2289,8 @@ const handleHistoryClick = async (item: any) => {
                       :chart-data="item.chartData"
                       :record-id="item.record_id"
                       :parent-scoll-bottom-method="scrollToBottom"
-                      @failed="() => onFailedReader(index)"
-                      @completed="() => onCompletedReader(index)"
+                      @failed="() => onFailedReader(index, item.chat_id)"
+                      @completed="() => onCompletedReader(index, item.chat_id)"
                       @chartready="() => onChartReady(index + 1)"
                       @recycle-qa="() => onRecycleQa(index)"
                       @praise-fead-back="() => onPraiseFeadBack(index)"
@@ -2845,6 +2870,22 @@ $shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 10%), 0 4px 6px -4px rgb(0 0 0 / 10%);
 
   &:hover {
     background-color: color.adjust($bg-subtle, $lightness: -2%);
+  }
+}
+
+.history-processing-spinner {
+  width: 14px;
+  height: 14px;
+  margin-left: 10px;
+  border: 2px solid rgb(126 107 242 / 20%);
+  border-top-color: #7e6bf2;
+  border-radius: 50%;
+  animation: history-processing-spin 0.8s linear infinite;
+}
+
+@keyframes history-processing-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

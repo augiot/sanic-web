@@ -28,10 +28,10 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from agent.deepagent.tools.native_sql_tools import (
     set_native_datasource_info,
-    sql_db_list_tables,
     sql_db_query,
     sql_db_query_checker,
     sql_db_schema,
+    sql_db_smart_search,
     sql_db_table_relationship,
 )
 from agent.deepagent.tools.tool_call_manager import get_tool_call_manager
@@ -145,13 +145,9 @@ class DeepAgent:
         self.running_tasks = {}
 
         # 从环境变量读取配置
-        self.RECURSION_LIMIT = int(
-            os.getenv("RECURSION_LIMIT", self.DEFAULT_RECURSION_LIMIT)
-        )
+        self.RECURSION_LIMIT = int(os.getenv("RECURSION_LIMIT", self.DEFAULT_RECURSION_LIMIT))
         self.LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", self.DEFAULT_LLM_TIMEOUT))
-        self.LLM_MAX_TOKENS = int(
-            os.getenv("LLM_MAX_TOKENS", self.DEFAULT_LLM_MAX_TOKENS)
-        )
+        self.LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", self.DEFAULT_LLM_MAX_TOKENS))
 
         # 链路追踪配置
         self.ENABLE_TRACING = os.getenv("LANGFUSE_TRACING_ENABLED", "false").lower() == "true"
@@ -194,9 +190,7 @@ class DeepAgent:
         try:
             if data_type is None:
                 data_type = DataTypeEnum.ANSWER.value[0]
-            await response.write(
-                self._create_response(content, message_type, data_type)
-            )
+            await response.write(self._create_response(content, message_type, data_type))
             if hasattr(response, "flush"):
                 await response.flush()
             return True
@@ -248,6 +242,9 @@ class DeepAgent:
             if isinstance(table_names, list):
                 table_names = ", ".join(table_names)
             return f"- 查看表结构: `{table_names}`\n" if table_names else "- 查看表结构\n"
+        elif name == "sql_db_smart_search":
+            query_preview = args.get("user_query", "")[:50]
+            return f"- 🔍 智能表检索: `{query_preview}`\n"
         elif name == "sql_db_list_tables":
             return "- 获取表列表\n"
         elif name == "sql_db_query_checker":
@@ -353,26 +350,27 @@ class DeepAgent:
             db_enum = DB.get_db(datasource.type, default_if_none=True)
 
             model = get_llm(timeout=self.LLM_TIMEOUT, max_tokens=self.LLM_MAX_TOKENS)
-            logger.info(
-                f"LLM 模型已创建，超时: {self.LLM_TIMEOUT}秒，"
-                f"递归限制: {self.RECURSION_LIMIT}"
-            )
+            logger.info(f"LLM 模型已创建，超时: {self.LLM_TIMEOUT}秒，" f"递归限制: {self.RECURSION_LIMIT}")
 
             if db_enum.connect_type == ConnectType.sqlalchemy:
-                logger.info(
-                    f"数据源 {datasource_id} ({datasource.type}) 使用 SQLAlchemy 连接"
-                )
+                logger.info(f"数据源 {datasource_id} ({datasource.type}) 使用 SQLAlchemy 连接")
                 config = DatasourceConfigUtil.decrypt_config(datasource.configuration)
-                uri = DatasourceConnectionUtil.build_connection_uri(
-                    datasource.type, config
-                )
+                uri = DatasourceConnectionUtil.build_connection_uri(datasource.type, config)
                 db = SQLDatabase.from_uri(uri, sample_rows_in_table_info=3)
                 toolkit = SQLDatabaseToolkit(db=db, llm=model)
-                sql_tools = toolkit.get_tools()
-            else:
-                logger.info(
-                    f"数据源 {datasource_id} ({datasource.type}) 使用原生驱动连接"
+                # 设置 datasource_id，使 sql_db_smart_search 能读取元数据
+                set_native_datasource_info(
+                    datasource_id,
+                    datasource.type,
+                    datasource.configuration,
+                    session_id,
                 )
+                # 过滤掉 sql_db_list_tables，由 sql_db_smart_search 替代
+                toolkit_tools = [t for t in toolkit.get_tools() if t.name != "sql_db_list_tables"]
+                sql_tools = [sql_db_smart_search, sql_db_table_relationship] + toolkit_tools
+                logger.info(f"SQLAlchemy 工具列表: {[t.name for t in sql_tools]}")
+            else:
+                logger.info(f"数据源 {datasource_id} ({datasource.type}) 使用原生驱动连接")
                 set_native_datasource_info(
                     datasource_id,
                     datasource.type,
@@ -380,7 +378,7 @@ class DeepAgent:
                     session_id,
                 )
                 sql_tools = [
-                    sql_db_list_tables,
+                    sql_db_smart_search,
                     sql_db_schema,
                     sql_db_query,
                     sql_db_query_checker,
@@ -388,7 +386,7 @@ class DeepAgent:
                 ]
 
         # 获取启用的 deep skill 路径
-        skill_paths = [os.path.join(current_dir, "skills")]#SkillService.get_enabled_skill_paths(scope="deep")
+        skill_paths = [os.path.join(current_dir, "skills")]  # SkillService.get_enabled_skill_paths(scope="deep")
 
         # 注入当前日期，让 LLM 知道当前时间
         current_date = datetime.now().strftime("%Y-%m-%d")
@@ -396,6 +394,13 @@ class DeepAgent:
 
         agent = create_deep_agent(
             model=model,
+            system_prompt=(
+                "CRITICAL RULE: When working with a database, you MUST call "
+                "`sql_db_smart_search` as your very first tool call — before "
+                "sql_db_list_tables, sql_db_schema, or any other SQL tool. "
+                "Pass the user's original question as `user_query`. "
+                "Never skip this step."
+            ),
             memory=memory,
             skills=skill_paths if skill_paths else None,
             tools=sql_tools,
@@ -463,6 +468,7 @@ class DeepAgent:
             # 如果启用追踪，添加 Langfuse Callback
             if self.ENABLE_TRACING:
                 from langfuse.langchain import CallbackHandler
+
                 config["callbacks"] = [CallbackHandler()]
                 config["metadata"] = {"langfuse_session_id": session_id}
 
@@ -470,15 +476,14 @@ class DeepAgent:
                 # 根据是否启用追踪，选择执行方式
                 if self.ENABLE_TRACING:
                     from langfuse import get_client
+
                     langfuse = get_client()
                     with langfuse.start_as_current_observation(
                         input=query,
                         as_type="agent",
                         name="Deep Research Agent (SQL)",
                     ) as rootspan:
-                        rootspan.update_trace(
-                            session_id=session_id, user_id=str(task_id)
-                        )
+                        rootspan.update_trace(session_id=session_id, user_id=str(task_id))
                         connection_closed = await asyncio.wait_for(
                             self._stream_response(
                                 agent,
@@ -506,9 +511,7 @@ class DeepAgent:
                     )
             except asyncio.TimeoutError:
                 elapsed = time.time() - start_time
-                logger.error(
-                    f"任务总超时 ({self.TASK_TIMEOUT}秒) - 实际耗时: {elapsed:.0f}秒"
-                )
+                logger.error(f"任务总超时 ({self.TASK_TIMEOUT}秒) - 实际耗时: {elapsed:.0f}秒")
                 await self._safe_write(
                     response,
                     f"\n> ⚠️ **执行超时**: 任务执行时间超过上限"
@@ -570,18 +573,13 @@ class DeepAgent:
             # 发送流结束标记
             if not connection_closed:
                 try:
-                    await self._safe_write(
-                        response, "", "end", DataTypeEnum.STREAM_END.value[0]
-                    )
+                    await self._safe_write(response, "", "end", DataTypeEnum.STREAM_END.value[0])
                 except Exception as e:
                     logger.warning(f"发送 STREAM_END 失败: {e}")
 
             elapsed = time.time() - start_time
             stats = self.tool_manager.get_stats(effective_session_id)
-            logger.info(
-                f"任务结束 - 会话: {effective_session_id}, "
-                f"耗时: {elapsed:.2f}秒, 工具调用统计: {stats}"
-            )
+            logger.info(f"任务结束 - 会话: {effective_session_id}, " f"耗时: {elapsed:.2f}秒, 工具调用统计: {stats}")
 
             # 清理任务记录
             if task_id in self.running_tasks:
@@ -634,14 +632,11 @@ class DeepAgent:
             while True:
                 # ---- 1. 等待下一 chunk（带 keepalive 超时）----
                 try:
-                    mode, chunk = await asyncio.wait_for(
-                        stream_anext(), timeout=self.STREAM_KEEPALIVE_INTERVAL
-                    )
+                    mode, chunk = await asyncio.wait_for(stream_anext(), timeout=self.STREAM_KEEPALIVE_INTERVAL)
                 except asyncio.TimeoutError:
                     try:
                         await response.write(
-                            'data: {"data":{"messageType": "info", "content": ""}, '
-                            '"dataType": "keepalive"}\n\n'
+                            'data: {"data":{"messageType": "info", "content": ""}, ' '"dataType": "keepalive"}\n\n'
                         )
                         if hasattr(response, "flush"):
                             await response.flush()
@@ -678,9 +673,7 @@ class DeepAgent:
                         "info",
                         DataTypeEnum.ANSWER.value[0],
                     )
-                    await self._safe_write(
-                        response, "", "end", DataTypeEnum.STREAM_END.value[0]
-                    )
+                    await self._safe_write(response, "", "end", DataTypeEnum.STREAM_END.value[0])
                     break
 
                 # ---- 3. messages 模式：token 级实时流式输出 ----
@@ -694,9 +687,7 @@ class DeepAgent:
                     if node_name == "tools":
                         continue
 
-                    if not (
-                        hasattr(message_chunk, "content") and message_chunk.content
-                    ):
+                    if not (hasattr(message_chunk, "content") and message_chunk.content):
                         continue
 
                     token_text = self._extract_text(message_chunk.content)
@@ -709,9 +700,7 @@ class DeepAgent:
 
                     # 阶段切换处理
                     if new_phase != tracker.current_phase:
-                        closed = await self._handle_phase_transition(
-                            response, tracker, new_phase, node_name
-                        )
+                        closed = await self._handle_phase_transition(response, tracker, new_phase, node_name)
                         if not closed:
                             connection_closed = True
                             break
@@ -747,10 +736,7 @@ class DeepAgent:
                     for node_name, node_output in chunk.items():
                         if connection_closed:
                             break
-                        if (
-                            not isinstance(node_output, dict)
-                            or "messages" not in node_output
-                        ):
+                        if not isinstance(node_output, dict) or "messages" not in node_output:
                             continue
 
                         messages = node_output["messages"]
@@ -758,9 +744,7 @@ class DeepAgent:
                             messages = [messages]
 
                         for msg in messages:
-                            if not await self._process_update_message(
-                                msg, response, answer_collector
-                            ):
+                            if not await self._process_update_message(msg, response, answer_collector):
                                 connection_closed = True
                                 break
 
@@ -811,10 +795,7 @@ class DeepAgent:
                 try:
                     full_output = "".join(answer_collector)
                     if "REPORT_HTML_START" in full_output and "REPORT_HTML_END" not in full_output:
-                        logger.warning(
-                            f"HTML 报告被截断 - 会话: {session_id}, "
-                            f"输出长度: {len(full_output)}"
-                        )
+                        logger.warning(f"HTML 报告被截断 - 会话: {session_id}, " f"输出长度: {len(full_output)}")
                         truncation_msg = (
                             "\n\n> ⚠️ **报告生成不完整**: HTML 报告在生成过程中被截断。"
                             "可能原因：模型输出 token 达到上限。请尝试简化报告需求后重试。\n"
@@ -831,8 +812,7 @@ class DeepAgent:
                     pass
 
         logger.info(
-            f"流式响应结束 - 会话: {session_id}, "
-            f"token数: {token_count}, 阶段: {tracker.current_phase.value}"
+            f"流式响应结束 - 会话: {session_id}, " f"token数: {token_count}, 阶段: {tracker.current_phase.value}"
         )
         return connection_closed
 
@@ -880,9 +860,7 @@ class DeepAgent:
         logger.debug(f"阶段切换: {old_phase.value} → {new_phase.value}")
         return True
 
-    async def _process_update_message(
-        self, msg, response, answer_collector: list
-    ) -> bool:
+    async def _process_update_message(self, msg, response, answer_collector: list) -> bool:
         """
         处理 updates 模式下的单条消息（工具调用/结果）
 

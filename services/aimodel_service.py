@@ -15,6 +15,226 @@ from model.serializers import model_to_dict
 logger = logging.getLogger(__name__)
 pool = get_db_pool()
 
+
+def _build_openai_headers(api_key: str) -> dict:
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
+def _http_error_detail(error: httpx.HTTPStatusError) -> str:
+    detail = error.response.text.strip()
+    if not detail:
+        return f"HTTP {error.response.status_code}"
+    return detail[:500]
+
+
+def _has_chat_choices(response: httpx.Response) -> bool:
+    try:
+        choices = response.json().get("choices")
+    except (ValueError, AttributeError):
+        return False
+    return isinstance(choices, list) and bool(choices)
+
+
+async def _check_embedding_model_legacy(
+    supplier: int,
+    api_domain: str,
+    api_key: str,
+) -> dict:
+    domain = api_domain.rstrip("/")
+    if supplier == 3:
+        if domain.endswith("/v1"):
+            domain = domain[:-3]
+        url = f"{domain}/api/tags"
+        headers = None
+        timeout = 5
+    else:
+        url = f"{domain}/models"
+        headers = _build_openai_headers(api_key)
+        timeout = 10
+
+    async with httpx.AsyncClient() as client:
+        request_kwargs = {"timeout": timeout}
+        if headers is not None:
+            request_kwargs["headers"] = headers
+        response = await client.get(url, **request_kwargs)
+        response.raise_for_status()
+
+    return {"success": True, "message": "连接成功"}
+
+
+async def _check_rerank_model(
+    supplier: int,
+    api_domain: str,
+    api_key: str,
+    base_model: str,
+) -> dict:
+    documents = [
+        "文本排序模型根据相关性对候选文本进行排序",
+        "量子计算是计算科学的前沿领域",
+    ]
+    is_dashscope = supplier == 6 or "aliyuncs" in api_domain
+    if is_dashscope:
+        payload = {
+            "model": base_model,
+            "input": {
+                "query": "什么是文本排序模型",
+                "documents": documents,
+            },
+            "parameters": {
+                "return_documents": False,
+                "top_n": len(documents),
+            },
+        }
+    else:
+        payload = {
+            "query": "什么是文本排序模型",
+            "documents": documents,
+        }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            api_domain.rstrip("/"),
+            headers=_build_openai_headers(api_key),
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+
+    try:
+        response_data = response.json()
+    except ValueError:
+        return {"success": False, "message": "Rerank 测试失败: 响应不是有效 JSON"}
+
+    if is_dashscope:
+        results = (response_data.get("output") or {}).get("results")
+    else:
+        results = response_data.get("results") if isinstance(response_data, dict) else response_data
+    if not isinstance(results, list) or not results:
+        return {"success": False, "message": "Rerank 测试失败: 响应中未返回排序结果"}
+
+    return {"success": True, "message": "连接成功"}
+
+
+async def _check_openai_compatible_model(
+    api_domain: str,
+    api_key: str,
+    base_model: str,
+) -> dict:
+    domain = api_domain.rstrip("/")
+    headers = _build_openai_headers(api_key)
+    capabilities = {
+        "models": False,
+        "chat": False,
+        "tool_calling": False,
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{domain}/models",
+                headers=headers,
+                timeout=10,
+            )
+            response.raise_for_status()
+            capabilities["models"] = True
+        except httpx.HTTPStatusError:
+            # 部分兼容服务未实现 /models，但不影响按已配置模型名称调用。
+            pass
+
+        chat_body = {
+            "model": base_model,
+            "messages": [{"role": "user", "content": "请回复 ok"}],
+            "stream": False,
+        }
+        try:
+            response = await client.post(
+                f"{domain}/chat/completions",
+                headers=headers,
+                json=chat_body,
+                timeout=30,
+            )
+            response.raise_for_status()
+            if not _has_chat_choices(response):
+                return {
+                    "success": False,
+                    "message": "基础对话测试失败: 模型响应格式异常，未返回 choices",
+                    "capabilities": capabilities,
+                }
+            capabilities["chat"] = True
+        except httpx.HTTPStatusError as error:
+            return {
+                "success": False,
+                "message": f"基础对话测试失败: {_http_error_detail(error)}",
+                "capabilities": capabilities,
+            }
+
+        tool_body = {
+            **chat_body,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "请判断是否需要调用 connection_test 工具",
+                }
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "connection_test",
+                        "description": "用于测试模型服务是否支持 Agent 工具调用",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {},
+                        },
+                    },
+                }
+            ],
+            "tool_choice": "auto",
+        }
+        try:
+            response = await client.post(
+                f"{domain}/chat/completions",
+                headers=headers,
+                json=tool_body,
+                timeout=30,
+            )
+            response.raise_for_status()
+            if not _has_chat_choices(response):
+                return {
+                    "success": False,
+                    "message": "基础对话可用，但 Agent 工具调用测试响应格式异常",
+                    "capabilities": capabilities,
+                }
+            capabilities["tool_calling"] = True
+        except httpx.HTTPStatusError as error:
+            detail = _http_error_detail(error)
+            if "--enable-auto-tool-choice" in detail:
+                message = (
+                    "基础对话可用，但 Agent 工具调用不可用: "
+                    f"{detail}。请在模型服务启用自动工具调用。"
+                )
+            else:
+                message = f"基础对话可用，但 Agent 工具调用测试失败: {detail}"
+            return {
+                "success": False,
+                "message": message,
+                "capabilities": capabilities,
+            }
+
+    message = "连接成功，基础对话和 Agent 工具调用均可用"
+    if not capabilities["models"]:
+        message += "；模型列表接口不可用"
+
+    return {
+        "success": True,
+        "message": message,
+        "capabilities": capabilities,
+    }
+
+
 async def query_model_list(keyword: str = None, model_type: int = None) -> List[dict]:
     with pool.get_session() as session:
         query = session.query(TAiModel)
@@ -177,6 +397,7 @@ async def check_llm_status(data: dict) -> dict:
     :return: 测试结果
     """
     supplier = data.get('supplier', 1)
+    model_type = data.get('model_type', 1)
     api_key = data.get('api_key') or ''
     api_domain = data.get('api_domain', '')
     base_model = data.get('base_model', '')
@@ -185,103 +406,40 @@ async def check_llm_status(data: dict) -> dict:
         return {"success": False, "message": "API 域名不能为空"}
     
     try:
-        # Ollama 不需要 API Key
+        if model_type == 2:
+            return await _check_embedding_model_legacy(supplier, api_domain, api_key)
+        if model_type == 3:
+            if not base_model:
+                return {"success": False, "message": "基础模型不能为空"}
+            return await _check_rerank_model(
+                supplier,
+                api_domain,
+                api_key,
+                base_model,
+            )
+
         if supplier == 3:
-            domain = api_domain
+            domain = api_domain.rstrip("/")
             if domain.endswith('/v1'):
                 domain = domain[:-3]
-            url = f"{domain}/api/tags"
             async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=5)
+                resp = await client.get(f"{domain}/api/tags", timeout=5)
                 resp.raise_for_status()
-                return {"success": True, "message": "连接成功"}
-        
-        # 其他供应商需要 API Key（但某些本地部署可能不需要）
-        # 尝试发送一个简单的请求来测试连接
-        if supplier == 1:  # OpenAI
-            domain = api_domain or "https://api.openai.com/v1"
-            url = f"{domain}/models"
-            headers = {}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers, timeout=10)
-                resp.raise_for_status()
-                return {"success": True, "message": "连接成功"}
-        
-        # vLLM 可能不需要 API Key
-        elif supplier == 4:
-            url = f"{api_domain}/models"
-            headers = {}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers, timeout=5)
-                resp.raise_for_status()
-                return {"success": True, "message": "连接成功"}
-        
-        # MiniMax 特殊处理
-        elif supplier == 10:  # MiniMax
-            # MiniMax 使用兼容OpenAI的API，但可能有特定的端点要求
-            domain = api_domain
-            
-            # 根据搜索结果，MiniMax的API端点可能不是标准的/models
-            # 尝试使用更简单的连接测试方法
-            url = f"{domain}/models"
-            headers = {"Content-Type": "application/json"}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-            
-            try:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(url, headers=headers, timeout=10)
-                    resp.raise_for_status()
-                    return {"success": True, "message": "连接成功"}
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 404:
-                    # 对于MiniMax，如果/models端点不存在，尝试直接测试连接
-                    # 使用一个简单的HEAD请求来测试网络连接
-                    try:
-                        async with httpx.AsyncClient() as client:
-                            # 尝试对基础域名进行连接测试
-                            base_domain = domain.replace('/v1', '')
-                            resp = await client.head(base_domain, timeout=5)
-                            # 如果能连接到域名，说明配置基本正确
-                            return {"success": True, "message": "连接成功"}
-                    except:
-                        return {"success": False, "message": "无法连接到API域名，请检查网络和域名配置"}
-                elif e.response.status_code == 401:
-                    return {"success": False, "message": "API Key 无效或未授权"}
-                else:
-                    return {"success": False, "message": f"连接失败: HTTP {e.response.status_code}"}
-            except httpx.TimeoutException:
-                return {"success": False, "message": "连接超时，请检查网络或API域名"}
-            except httpx.ConnectError:
-                return {"success": False, "message": "无法连接到服务器，请检查API域名"}
-            except Exception as e:
-                logger.error(f"MiniMax连接测试失败: {e}")
-                return {"success": False, "message": f"连接失败: {str(e)}"}
-        
-        # 其他供应商（DeepSeek, Qwen, Moonshot, ZhipuAI 等）
-        else:
-            # 尝试使用 OpenAI 兼容协议测试
-            domain = api_domain
-            url = f"{domain}/models" if not domain.endswith('/v1') else f"{domain}/models"
-            headers = {}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers, timeout=10)
-                resp.raise_for_status()
-                return {"success": True, "message": "连接成功"}
+                return {
+                    "success": True,
+                    "message": "连接成功",
+                    "capabilities": {"models": True},
+                }
+
+        if not base_model:
+            return {"success": False, "message": "基础模型不能为空"}
+
+        return await _check_openai_compatible_model(api_domain, api_key, base_model)
     
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:
             return {"success": False, "message": "API Key 无效或未授权"}
         elif e.response.status_code == 404:
-            # 对于MiniMax等供应商，可能需要特殊处理
-            if supplier == 10:  # MiniMax
-                return {"success": False, "message": "API 端点不存在，请检查 API 域名。MiniMax 可能需要使用完整的模型列表端点"}
             return {"success": False, "message": "API 端点不存在，请检查 API 域名"}
         else:
             return {"success": False, "message": f"连接失败: HTTP {e.response.status_code}"}

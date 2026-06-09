@@ -1,13 +1,11 @@
 import json
 import logging
 import traceback
-from decimal import Decimal
 
+from agent.common.json_value import convert_value_for_json
 from agent.text2sql.state.agent_state import AgentState, ExecutionResult
 import sqlglot
 from sqlglot import parse
-from datetime import datetime, date
-import pandas as pd
 
 from services.db_qadata_process import process
 
@@ -114,14 +112,7 @@ def data_render_apache(state: AgentState) -> dict:
 
 
 def convert_value(v):
-    if isinstance(v, Decimal):
-        return float(v)  # 或者 str(v)
-    elif isinstance(v, (datetime, pd.Timestamp)):
-        return v.strftime("%Y-%m-%d %H:%M:%S")
-    elif isinstance(v, date):
-        return v.strftime("%Y-%m-%d")
-    else:
-        return v
+    return convert_value_for_json(v)
 
 
 def extract_table_names_sqlglot(sql: str, db_type: str = "mysql") -> list:
