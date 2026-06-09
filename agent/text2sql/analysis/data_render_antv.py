@@ -5,13 +5,12 @@
 import json
 import logging
 import traceback
-from decimal import Decimal
-from datetime import datetime, date
 from typing import Dict, Any, List, Optional, Tuple
 
 import sqlglot
 from sqlglot import parse
 
+from agent.common.json_value import convert_value_for_json
 from agent.text2sql.state.agent_state import AgentState, ExecutionResult
 
 logger = logging.getLogger(__name__)
@@ -40,14 +39,7 @@ DB_TYPE_TO_DIALECT = {
 
 def convert_value(v):
     """转换数据类型"""
-    if isinstance(v, Decimal):
-        return float(v)
-    elif isinstance(v, (datetime,)):
-        return v.strftime("%Y-%m-%d %H:%M:%S")
-    elif isinstance(v, date):
-        return v.strftime("%Y-%m-%d")
-    else:
-        return v
+    return convert_value_for_json(v)
 
 
 def extract_table_names_sqlglot(sql: str, db_type: str = "mysql") -> List[str]:

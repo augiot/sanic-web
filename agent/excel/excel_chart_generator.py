@@ -7,32 +7,16 @@
 import json
 import logging
 import traceback
-from decimal import Decimal
-from datetime import datetime, date
 from typing import Dict, Any, Optional, List
 
 from langchain_core.messages import SystemMessage, HumanMessage
 
+from agent.common.json_value import convert_value_for_json
 from agent.excel.excel_agent_state import ExcelAgentState
 from agent.excel.template.prompt_builder import ExcelPromptBuilder
 from common.llm_util import get_llm
 
 logger = logging.getLogger(__name__)
-
-
-def convert_value_for_json(v):
-    """
-    转换数据类型为JSON可序列化的格式
-    用于在转换为JSON之前处理Decimal、datetime等类型
-    """
-    if isinstance(v, Decimal):
-        return float(v)
-    elif isinstance(v, (datetime,)):
-        return v.strftime("%Y-%m-%d %H:%M:%S")
-    elif isinstance(v, date):
-        return v.strftime("%Y-%m-%d")
-    else:
-        return v
 
 
 def prepare_data_for_json(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -166,4 +150,3 @@ def excel_chart_generator(state: ExcelAgentState) -> ExcelAgentState:
         state["chart_config"] = None
     
     return state
-
